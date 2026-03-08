@@ -1,55 +1,35 @@
 import { FontAwesome5 } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from 'react-native';
-import Animated, { FadeInUp, Layout } from 'react-native-reanimated';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
-
-type CampaignType = 'money' | 'physical_items' | 'mixed';
-type ChatRole = 'organizer' | 'donor' | 'volunteer';
-
-type EventOption = {
-  id: string;
-  name: string;
-  city: string;
-};
+import {
+  type Campaign,
+  createCampaign,
+  getCampaigns,
+} from '@/services/api/campaignsService';
+import { type EventSummary, getEvents } from '@/services/api/eventsService';
 
 type ChatMessage = {
   id: string;
-  author: ChatRole;
+  author: string;
   message: string;
   createdAt: string;
 };
 
-type Campaign = {
-  id: string;
-  name: string;
-  eventId: string;
-  eventName: string;
-  campaignType: CampaignType;
-  collectedMoney: number;
-  collectedItems: number;
-  chat: ChatMessage[];
-};
-
-const EVENT_OPTIONS: EventOption[] = [
-  { id: 'evt-1', name: 'Inundacion Rio Bogota', city: 'Bogota' },
-  { id: 'evt-2', name: 'Deslizamiento Ladera Norte', city: 'Medellin' },
-  { id: 'evt-3', name: 'Incendio Forestal Rural', city: 'Cali' },
-  { id: 'evt-4', name: 'Vendaval Zona Costera', city: 'Barranquilla' },
-];
-
-const TYPE_LABELS: Record<CampaignType, string> = {
-  money: 'Dinero',
-  physical_items: 'Elementos Fisicos',
-  mixed: 'Mixta',
-};
-
-const ROLE_LABELS: Record<ChatRole, string> = {
-  organizer: 'Organizador',
-  donor: 'Donador',
-  volunteer: 'Voluntario',
-};
+const DEFAULT_CREATED_BY = 1;
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('es-CO', {
@@ -60,375 +40,442 @@ function formatMoney(value: number) {
 }
 
 export function OrganizerCampaignsScreen() {
-  const [campaignName, setCampaignName] = useState('');
-  const [campaignType, setCampaignType] = useState<CampaignType>('mixed');
-  const [selectedEventId, setSelectedEventId] = useState(EVENT_OPTIONS[0].id);
-  const [donationMoney, setDonationMoney] = useState('150000');
-  const [donationItems, setDonationItems] = useState('8');
-  const [chatRole, setChatRole] = useState<ChatRole>('organizer');
-  const [chatInput, setChatInput] = useState('');
-  const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null);
-
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [events, setEvents] = useState<EventSummary[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const selectedEvent = useMemo(
-    () => EVENT_OPTIONS.find((event) => event.id === selectedEventId) ?? EVENT_OPTIONS[0],
-    [selectedEventId]
-  );
+  const [campaignName, setCampaignName] = useState('');
+  const [campaignDescription, setCampaignDescription] = useState('');
+  const [goalMoney, setGoalMoney] = useState('0');
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const activeCampaign = useMemo(
-    () => campaigns.find((campaign) => campaign.id === activeCampaignId) ?? null,
-    [activeCampaignId, campaigns]
-  );
+  const [moneyDraftByCampaign, setMoneyDraftByCampaign] = useState<Record<number, string>>({});
+  const [itemsDraftByCampaign, setItemsDraftByCampaign] = useState<Record<number, string>>({});
+  const [itemsCollectedByCampaign, setItemsCollectedByCampaign] = useState<Record<number, number>>({});
 
-  const canCreateCampaign = campaignName.trim().length > 3;
+  const [chatCampaignId, setChatCampaignId] = useState<number | null>(null);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatByCampaign, setChatByCampaign] = useState<Record<number, ChatMessage[]>>({});
 
-  const totalMoney = useMemo(
-    () => campaigns.reduce((acc, campaign) => acc + campaign.collectedMoney, 0),
-    [campaigns]
-  );
+  useEffect(() => {
+    let isMounted = true;
 
-  const totalItems = useMemo(
-    () => campaigns.reduce((acc, campaign) => acc + campaign.collectedItems, 0),
-    [campaigns]
-  );
+    async function loadData() {
+      setIsLoading(true);
+      setLoadError(null);
 
-  const handleCreateCampaign = () => {
-    if (!canCreateCampaign) {
-      return;
+      try {
+        const [eventsResponse, campaignsResponse] = await Promise.all([getEvents(), getCampaigns()]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setEvents(eventsResponse.data);
+        setCampaigns(campaignsResponse.data);
+        setSelectedEventId(eventsResponse.data[0]?.id ?? null);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setLoadError('No fue posible cargar eventos y campanas. Verifica el backend.');
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
     }
 
-    const newCampaign: Campaign = {
-      id: `cmp-${Date.now()}`,
-      name: campaignName.trim(),
-      eventId: selectedEvent.id,
-      eventName: `${selectedEvent.name} (${selectedEvent.city})`,
-      campaignType,
-      collectedMoney: 0,
-      collectedItems: 0,
-      chat: [
-        {
-          id: `msg-${Date.now()}`,
-          author: 'organizer',
-          message: 'Bienvenidos al chat general de la campana.',
-          createdAt: new Date().toLocaleTimeString('es-CO', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-        },
-      ],
+    loadData();
+
+    return () => {
+      isMounted = false;
     };
+  }, []);
 
-    setCampaigns((prev) => [newCampaign, ...prev]);
-    setActiveCampaignId(newCampaign.id);
-    setCampaignName('');
+  const eventsById = useMemo(
+    () => new Map(events.map((eventItem) => [eventItem.id, eventItem])),
+    [events]
+  );
+
+  const chatCampaign = useMemo(
+    () => campaigns.find((campaignItem) => campaignItem.id === chatCampaignId) ?? null,
+    [campaigns, chatCampaignId]
+  );
+
+  const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
+  const canCreate = campaignName.trim().length >= 3 && Boolean(selectedEventId) && !isSubmitting;
+
+  const handleOpenCreate = () => {
+    setFormError(null);
+    setIsCreateOpen(true);
   };
 
-  const handleDonateMoney = () => {
-    if (!activeCampaign) {
+  const handleSubmitCampaign = async () => {
+    if (!selectedEventId) {
+      setFormError('Debes tener al menos un evento creado para registrar una campana.');
       return;
     }
 
-    const value = Number(donationMoney.replace(/[^0-9]/g, ''));
+    if (campaignName.trim().length < 3) {
+      setFormError('El nombre de la campana debe tener al menos 3 caracteres.');
+      return;
+    }
+
+    const parsedGoalMoney = Number(goalMoney.replace(/[^0-9]/g, '')) || 0;
+
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const createdCampaign = await createCampaign({
+        name: campaignName.trim(),
+        description: campaignDescription.trim() || 'Campana humanitaria',
+        campaignType: 'mixed',
+        goalMoney: parsedGoalMoney,
+        eventId: selectedEventId,
+        createdBy: DEFAULT_CREATED_BY,
+      });
+
+      setCampaigns((prev) => [createdCampaign, ...prev]);
+      setCampaignName('');
+      setCampaignDescription('');
+      setGoalMoney('0');
+      setIsCreateOpen(false);
+    } catch {
+      setFormError('No se pudo crear la campana. Revisa que el backend este disponible.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddMoney = (campaignId: number) => {
+    const value = Number((moneyDraftByCampaign[campaignId] ?? '').replace(/[^0-9]/g, ''));
     if (!value || value <= 0) {
       return;
     }
 
     setCampaigns((prev) =>
-      prev.map((campaign) =>
-        campaign.id === activeCampaign.id
-          ? { ...campaign, collectedMoney: campaign.collectedMoney + value }
-          : campaign
+      prev.map((campaignItem) =>
+        campaignItem.id === campaignId
+          ? { ...campaignItem, collectedMoney: campaignItem.collectedMoney + value }
+          : campaignItem
       )
     );
+    setMoneyDraftByCampaign((prev) => ({ ...prev, [campaignId]: '' }));
   };
 
-  const handleDonateItems = () => {
-    if (!activeCampaign) {
-      return;
-    }
-
-    const value = Number(donationItems.replace(/[^0-9]/g, ''));
+  const handleAddItems = (campaignId: number) => {
+    const value = Number((itemsDraftByCampaign[campaignId] ?? '').replace(/[^0-9]/g, ''));
     if (!value || value <= 0) {
       return;
     }
 
-    setCampaigns((prev) =>
-      prev.map((campaign) =>
-        campaign.id === activeCampaign.id
-          ? { ...campaign, collectedItems: campaign.collectedItems + value }
-          : campaign
-      )
-    );
+    setItemsCollectedByCampaign((prev) => ({
+      ...prev,
+      [campaignId]: (prev[campaignId] ?? 0) + value,
+    }));
+    setItemsDraftByCampaign((prev) => ({ ...prev, [campaignId]: '' }));
   };
 
-  const handleSendMessage = () => {
-    if (!activeCampaign || chatInput.trim().length < 2) {
+  const openChat = (campaignId: number) => {
+    setChatCampaignId(campaignId);
+    setChatDraft('');
+  };
+
+  const handleSendChat = () => {
+    if (!chatCampaignId || chatDraft.trim().length < 1) {
       return;
     }
 
     const newMessage: ChatMessage = {
       id: `msg-${Date.now()}`,
-      author: chatRole,
-      message: chatInput.trim(),
+      author: 'Usuario',
+      message: chatDraft.trim(),
       createdAt: new Date().toLocaleTimeString('es-CO', {
         hour: '2-digit',
         minute: '2-digit',
       }),
     };
 
-    setCampaigns((prev) =>
-      prev.map((campaign) =>
-        campaign.id === activeCampaign.id
-          ? { ...campaign, chat: [...campaign.chat, newMessage] }
-          : campaign
-      )
-    );
-
-    setChatInput('');
+    setChatByCampaign((prev) => ({
+      ...prev,
+      [chatCampaignId]: [...(prev[chatCampaignId] ?? []), newMessage],
+    }));
+    setChatDraft('');
   };
 
   return (
     <SafeAreaView className='flex-1 bg-[#eef4ff]'>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 140 }}>
+      <View className='flex-1 px-4 pt-6'>
+        <Pressable
+          className='rounded-2xl bg-[#1f5fe0] px-5 py-4 active:opacity-90'
+          onPress={handleOpenCreate}
+          style={{
+            shadowColor: '#1f5fe0',
+            shadowOpacity: 0.25,
+            shadowOffset: { width: 0, height: 8 },
+            shadowRadius: 14,
+            elevation: 6,
+          }}
+        >
+          <Text className='text-center text-base font-extrabold tracking-[0.3px] text-white'>
+            Crear campaña
+          </Text>
+        </Pressable>
 
-      <View className='rounded-2xl border border-[#dce8ff] bg-white p-5'>
-        <Text className='text-xl font-extrabold text-[#14243f]'>Modulo Campanas</Text>
-        <Text className='mt-1 text-sm text-[#5d7498]'>
-          Crea campanas, vincula eventos, registra donaciones y gestiona el chat general.
-        </Text>
-
-        <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Nombre Campana</Text>
-        <TextInput
-          className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-          placeholder='Ej: Ayuda inmediata barrio San Jorge'
-          placeholderTextColor='#8ba2c3'
-          value={campaignName}
-          onChangeText={setCampaignName}
-        />
-
-        <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Evento Asociado</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View className='flex-row gap-2'>
-            {EVENT_OPTIONS.map((eventOption) => {
-              const isSelected = eventOption.id === selectedEventId;
-              return (
-                <Pressable
-                  key={eventOption.id}
-                  className={`rounded-full border px-4 py-2 ${
-                    isSelected
-                      ? 'border-[#1f5fe0] bg-[#e8f0ff]'
-                      : 'border-[#d6e3fb] bg-white'
-                  }`}
-                  onPress={() => setSelectedEventId(eventOption.id)}
-                >
-                  <Text
-                    className={`font-semibold ${
-                      isSelected ? 'text-[#1f4fb6]' : 'text-[#38547f]'
-                    }`}
-                  >
-                    {eventOption.city}
-                  </Text>
-                </Pressable>
-              );
-            })}
+        {isLoading ? (
+          <View className='mt-6 items-center'>
+            <ActivityIndicator color='#1f5fe0' size='small' />
           </View>
-        </ScrollView>
-        <Text className='mt-2 text-sm text-[#5d7498]'>
-          Seleccionado: {selectedEvent.name} ({selectedEvent.city})
-        </Text>
+        ) : null}
 
-        <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Tipo De Campana</Text>
-        <View className='flex-row gap-2'>
-          {(['money', 'physical_items', 'mixed'] as CampaignType[]).map((typeOption) => {
-            const isSelected = typeOption === campaignType;
+        {loadError ? (
+          <Text className='mt-4 rounded-xl bg-[#ffecef] px-3 py-2 text-sm text-[#9f2238]'>
+            {loadError}
+          </Text>
+        ) : null}
+
+        {!isLoading && events.length === 0 ? (
+          <Text className='mt-4 rounded-xl bg-[#fff6e8] px-3 py-2 text-sm text-[#8a5d13]'>
+            No hay eventos creados. Debes crear un evento para poder registrar campanas.
+          </Text>
+        ) : null}
+
+        <ScrollView className='mt-4' contentContainerStyle={{ gap: 12, paddingBottom: 120 }}>
+          {campaigns.map((campaignItem, index) => {
+            const eventInfo = eventsById.get(campaignItem.eventId);
+            const itemsCollected = itemsCollectedByCampaign[campaignItem.id] ?? 0;
+
             return (
-              <Pressable
-                key={typeOption}
-                className={`rounded-full border px-4 py-2 ${
-                  isSelected ? 'border-[#2f68d8] bg-[#e9f1ff]' : 'border-[#d6e3fb] bg-white'
-                }`}
-                onPress={() => setCampaignType(typeOption)}
+              <Animated.View
+                className='rounded-2xl border border-[#d8e6ff] bg-white p-4'
+                entering={FadeInUp.delay(index * 45).duration(240)}
+                key={campaignItem.id}
               >
-                <Text
-                  className={`font-semibold ${
-                    isSelected ? 'text-[#214a94]' : 'text-[#4a6083]'
-                  }`}
-                >
-                  {TYPE_LABELS[typeOption]}
-                </Text>
-              </Pressable>
+                <View className='flex-row items-start justify-between'>
+                  <View className='flex-1 pr-3'>
+                    <Text className='text-base font-extrabold text-[#1b3259]'>{campaignItem.name}</Text>
+                    <Text className='mt-1 text-xs text-[#5d7399]'>
+                      Evento: {eventInfo ? `${eventInfo.name} (${eventInfo.city})` : `ID ${campaignItem.eventId}`}
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    className='h-10 w-10 items-center justify-center rounded-full bg-[#1f5fe0]'
+                    onPress={() => openChat(campaignItem.id)}
+                  >
+                    <Text className='text-[10px] font-bold text-white'>Chat</Text>
+                  </Pressable>
+                </View>
+
+                <View className='mt-3 flex-row gap-2'>
+                  <View className='flex-1 rounded-xl bg-[#edf3ff] p-3'>
+                    <Text className='text-xs font-semibold text-[#4b648d]'>Fondos</Text>
+                    <Text className='mt-1 text-sm font-extrabold text-[#1f4fa7]'>
+                      {formatMoney(campaignItem.collectedMoney)}
+                    </Text>
+                  </View>
+                  <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
+                    <Text className='text-xs font-semibold text-[#4b648d]'>Elementos</Text>
+                    <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
+                      {itemsCollected}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className='mt-3 flex-row items-center gap-2'>
+                  <TextInput
+                    className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
+                    keyboardType='number-pad'
+                    onChangeText={(value) =>
+                      setMoneyDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
+                    }
+                    placeholder='Monto COP'
+                    placeholderTextColor='#8ea6c8'
+                    value={moneyDraftByCampaign[campaignItem.id] ?? ''}
+                  />
+                  <Pressable
+                    className='rounded-xl bg-[#1f5fe0] px-3 py-2'
+                    onPress={() => handleAddMoney(campaignItem.id)}
+                  >
+                    <Text className='text-xs font-bold text-white'>Agregar fondos</Text>
+                  </Pressable>
+                </View>
+
+                <View className='mt-2 flex-row items-center gap-2'>
+                  <TextInput
+                    className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
+                    keyboardType='number-pad'
+                    onChangeText={(value) =>
+                      setItemsDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
+                    }
+                    placeholder='Cantidad de elementos'
+                    placeholderTextColor='#8ea6c8'
+                    value={itemsDraftByCampaign[campaignItem.id] ?? ''}
+                  />
+                  <Pressable
+                    className='rounded-xl bg-[#1d8a51] px-3 py-2'
+                    onPress={() => handleAddItems(campaignItem.id)}
+                  >
+                    <Text className='text-xs font-bold text-white'>Agregar items</Text>
+                  </Pressable>
+                </View>
+              </Animated.View>
             );
           })}
-        </View>
 
-        <Pressable
-          className={`mt-5 rounded-xl px-4 py-3 ${
-            canCreateCampaign ? 'bg-[#1f5fe0]' : 'bg-[#9eb8e8]'
-          }`}
-          disabled={!canCreateCampaign}
-          onPress={handleCreateCampaign}
+          {!isLoading && campaigns.length === 0 ? (
+            <Text className='text-sm text-[#5d7498]'>
+              Aun no hay campanas creadas.
+            </Text>
+          ) : null}
+        </ScrollView>
+      </View>
+
+      <Modal animationType='slide' transparent visible={isCreateOpen}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          className='flex-1'
         >
-          <Text className='text-center text-base font-semibold text-white'>Crear Campana</Text>
-        </Pressable>
-      </View>
+          <View className='flex-1 justify-end bg-[#07163166]'>
+            <View className='max-h-[88%] rounded-t-3xl bg-white px-5 pt-5'>
+              <ScrollView
+                contentContainerStyle={{ paddingBottom: 28 }}
+                keyboardShouldPersistTaps='handled'
+                showsVerticalScrollIndicator={false}
+              >
+                <Text className='text-lg font-extrabold text-[#17315c]'>Crear campaña</Text>
 
-      <View className='rounded-2xl border border-[#dce8ff] bg-white p-5'>
-        <Text className='text-lg font-extrabold text-[#14243f]'>Recaudado Total</Text>
-        <View className='mt-3 flex-row gap-3'>
-          <View className='flex-1 rounded-xl bg-[#e9f2ff] p-4'>
-            <Text className='text-xs font-semibold uppercase tracking-[1px] text-[#4f6487]'>
-              Dinero
-            </Text>
-            <Text className='mt-2 text-lg font-extrabold text-[#163a75]'>
-              {formatMoney(totalMoney)}
-            </Text>
-          </View>
-          <View className='flex-1 rounded-xl bg-[#e9fff2] p-4'>
-            <Text className='text-xs font-semibold uppercase tracking-[1px] text-[#4f6487]'>
-              Elementos
-            </Text>
-            <Text className='mt-2 text-lg font-extrabold text-[#13613b]'>{totalItems}</Text>
-          </View>
-        </View>
-      </View>
+            <Text className='mt-4 text-sm font-semibold text-[#27436d]'>Nombre</Text>
+            <TextInput
+              className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
+              onChangeText={setCampaignName}
+              placeholder='Ej: Kits de ayuda para inundaciones'
+              placeholderTextColor='#8ea6c8'
+              value={campaignName}
+            />
 
-      <View className='rounded-2xl border border-[#dce8ff] bg-white p-5'>
-        <Text className='text-lg font-extrabold text-[#14243f]'>Campanas Creadas</Text>
-        {campaigns.length === 0 ? (
-          <Text className='mt-2 text-sm text-[#6780a8]'>
-            Aun no hay campanas. Crea la primera para activar el chat y recaudos.
-          </Text>
-        ) : (
-          <View className='mt-3 gap-3'>
-            {campaigns.map((campaign) => {
-              const isActive = campaign.id === activeCampaignId;
-              return (
-                <Animated.View
-                  className={`rounded-xl border p-4 ${
-                    isActive
-                      ? 'border-[#2d67d6] bg-[#edf3ff]'
-                      : 'border-[#dbe7fb] bg-[#f9fbff]'
-                  }`}
-                  entering={FadeInUp.duration(260)}
-                  key={campaign.id}
-                  layout={Layout.springify()}
-                >
-                  <View className='flex-row items-start justify-between'>
-                    <View className='flex-1 pr-3'>
-                      <Text className='text-base font-bold text-[#1a3257]'>{campaign.name}</Text>
-                      <Text className='mt-1 text-xs text-[#5e7394]'>{campaign.eventName}</Text>
-                    </View>
+            <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Descripcion</Text>
+            <TextInput
+              className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
+              onChangeText={setCampaignDescription}
+              placeholder='Describe el objetivo de la campana'
+              placeholderTextColor='#8ea6c8'
+              value={campaignDescription}
+            />
+
+            <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Meta de fondos (COP)</Text>
+            <TextInput
+              className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
+              keyboardType='number-pad'
+              onChangeText={setGoalMoney}
+              placeholder='0'
+              placeholderTextColor='#8ea6c8'
+              value={goalMoney}
+            />
+
+            <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Evento asociado</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className='mt-2'>
+              <View className='flex-row gap-2'>
+                {events.map((eventItem) => {
+                  const isSelected = selectedEventId === eventItem.id;
+                  return (
                     <Pressable
-                      className={`rounded-full px-3 py-1 ${
-                        isActive ? 'bg-[#1f5fe0]' : 'bg-[#dde8fb]'
+                      className={`rounded-full border px-4 py-2 ${
+                        isSelected ? 'border-[#1f5fe0] bg-[#e8f0ff]' : 'border-[#d6e3fb] bg-white'
                       }`}
-                      onPress={() => setActiveCampaignId(campaign.id)}
+                      key={eventItem.id}
+                      onPress={() => setSelectedEventId(eventItem.id)}
                     >
-                      <Text className={`text-xs font-semibold ${isActive ? 'text-white' : 'text-[#35517c]'}`}>
-                        {isActive ? 'Activa' : 'Abrir'}
+                      <Text
+                        className={`text-xs font-semibold ${isSelected ? 'text-[#1f4fb6]' : 'text-[#4a6083]'}`}
+                      >
+                        {eventItem.name} - {eventItem.city}
                       </Text>
                     </Pressable>
-                  </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
 
-                  <View className='mt-3 flex-row gap-3'>
-                    <Text className='text-sm font-semibold text-[#23406d]'>
-                      {formatMoney(campaign.collectedMoney)}
-                    </Text>
-                    <Text className='text-sm font-semibold text-[#23406d]'>
-                      {campaign.collectedItems} elementos
-                    </Text>
-                  </View>
-                </Animated.View>
-              );
-            })}
+            {events.length === 0 ? (
+              <Text className='mt-3 rounded-xl bg-[#fff6e8] px-3 py-2 text-xs text-[#8a5d13]'>
+                No hay eventos creados. Sin evento no se puede crear la campana.
+              </Text>
+            ) : null}
+
+            {formError ? (
+              <Text className='mt-3 rounded-xl bg-[#ffecef] px-3 py-2 text-xs text-[#9f2238]'>
+                {formError}
+              </Text>
+            ) : null}
+
+            <View className='mt-5 flex-row items-center justify-between'>
+              <Pressable className='rounded-xl border border-[#d3def3] px-4 py-3' onPress={() => setIsCreateOpen(false)}>
+                <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                className={`rounded-xl px-5 py-3 ${canCreate ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'}`}
+                disabled={!canCreate}
+                onPress={handleSubmitCampaign}
+              >
+                <Text className='font-semibold text-white'>Guardar campaña</Text>
+              </Pressable>
+            </View>
+              </ScrollView>
+            </View>
           </View>
-        )}
-      </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
-      {activeCampaign ? (
-        <View className='rounded-2xl border border-[#dce8ff] bg-white p-5'>
-          <Text className='text-lg font-extrabold text-[#14243f]'>
-            Campana Activa: {activeCampaign.name}
-          </Text>
-
-          <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Registrar Donaciones</Text>
-          <View className='flex-row items-center gap-2'>
-            <TextInput
-              className='flex-1 rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-              keyboardType='number-pad'
-              onChangeText={setDonationMoney}
-              placeholder='Dinero COP'
-              placeholderTextColor='#8ba2c3'
-              value={donationMoney}
-            />
-            <Pressable className='rounded-xl bg-[#1f5fe0] px-3 py-3' onPress={handleDonateMoney}>
-              <FontAwesome5 color='#fff' name='hand-holding-usd' size={15} />
+      <Modal animationType='slide' visible={Boolean(chatCampaignId)}>
+        <SafeAreaView className='flex-1 bg-[#f4f8ff]'>
+          <View className='flex-row items-center px-4 py-3'>
+            <Pressable className='h-10 w-10 items-center justify-center rounded-full bg-white' onPress={() => setChatCampaignId(null)}>
+              <FontAwesome5 color='#1f4fb6' name='times' size={16} />
             </Pressable>
+            <Text className='ml-3 flex-1 text-base font-extrabold text-[#19335b]'>
+              Chat {chatCampaign ? `- ${chatCampaign.name}` : ''}
+            </Text>
           </View>
 
-          <View className='mt-2 flex-row items-center gap-2'>
-            <TextInput
-              className='flex-1 rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-              keyboardType='number-pad'
-              onChangeText={setDonationItems}
-              placeholder='Cantidad elementos fisicos'
-              placeholderTextColor='#8ba2c3'
-              value={donationItems}
-            />
-            <Pressable className='rounded-xl bg-[#2f9460] px-3 py-3' onPress={handleDonateItems}>
-              <FontAwesome5 color='#fff' name='boxes' size={15} />
-            </Pressable>
-          </View>
+          <ScrollView className='flex-1 px-4' contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
+            {chatMessages.length === 0 ? (
+              <Text className='mt-3 text-sm text-[#5d7498]'>
+                Aun no hay mensajes. Inicia la conversacion.
+              </Text>
+            ) : null}
 
-          <Text className='mt-5 mb-2 text-sm font-semibold text-[#233b61]'>Chat General</Text>
-          <ScrollView className='max-h-52 rounded-xl border border-[#dce7fb] bg-[#f9fbff] p-3'>
-            {activeCampaign.chat.map((message) => (
-              <View className='mb-2 rounded-xl bg-white px-3 py-2' key={message.id}>
-                <Text className='text-xs font-semibold text-[#3e5b88]'>
-                  {ROLE_LABELS[message.author]} - {message.createdAt}
+            {chatMessages.map((message) => (
+              <View className='rounded-xl bg-white px-3 py-2' key={message.id}>
+                <Text className='text-xs font-semibold text-[#3b5783]'>
+                  {message.author} - {message.createdAt}
                 </Text>
-                <Text className='mt-1 text-sm text-[#1e365b]'>{message.message}</Text>
+                <Text className='mt-1 text-sm text-[#1f365d]'>{message.message}</Text>
               </View>
             ))}
           </ScrollView>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className='mt-3'>
-            <View className='flex-row gap-2'>
-              {(['organizer', 'donor', 'volunteer'] as ChatRole[]).map((roleOption) => {
-                const isSelected = roleOption === chatRole;
-                return (
-                  <Pressable
-                    className={`rounded-full border px-4 py-2 ${
-                      isSelected ? 'border-[#2d67d6] bg-[#e8f0ff]' : 'border-[#d6e3fb] bg-white'
-                    }`}
-                    key={roleOption}
-                    onPress={() => setChatRole(roleOption)}
-                  >
-                    <Text className={`font-semibold ${isSelected ? 'text-[#214a94]' : 'text-[#4a6083]'}`}>
-                      {ROLE_LABELS[roleOption]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
-
-          <View className='mt-2 flex-row items-center gap-2'>
+          <View className='flex-row items-center gap-2 border-t border-[#dce6fb] bg-white px-4 py-3'>
             <TextInput
-              className='flex-1 rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-              onChangeText={setChatInput}
-              placeholder='Escribe un mensaje para el chat general'
-              placeholderTextColor='#8ba2c3'
-              value={chatInput}
+              className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
+              onChangeText={setChatDraft}
+              placeholder='Escribe un mensaje...'
+              placeholderTextColor='#8ea6c8'
+              value={chatDraft}
             />
-            <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-3' onPress={handleSendMessage}>
-              <FontAwesome5 color='#fff' name='paper-plane' size={14} />
+            <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2' onPress={handleSendChat}>
+              <Text className='font-semibold text-white'>Enviar</Text>
             </Pressable>
           </View>
-        </View>
-      ) : null}
-      </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       <OrganizerBottomTabs activeTab='campanas' />
     </SafeAreaView>
