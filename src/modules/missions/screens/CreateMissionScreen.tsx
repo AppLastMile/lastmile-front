@@ -15,6 +15,7 @@ import {
   COLOMBIAN_CITIES,
   type ColombianCity,
 } from '@/modules/missions/constants/colombianCities';
+import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 
 const COLOMBIA_REGION: Region = {
   latitude: 4.5709,
@@ -75,19 +76,9 @@ export function CreateMissionScreen() {
         ) : null}
       </MapView>
 
-      <View className='absolute left-5 right-5 top-16 rounded-2xl border border-[#d8e7ff] bg-white/95 p-4'>
-        <Text className='text-xs font-semibold uppercase tracking-[1px] text-[#4f6487]'>
-          Centro De Control
-        </Text>
-        <Text className='mt-1 text-xl font-extrabold text-[#13274a]'>Mapa De Incidentes</Text>
-        <Text className='mt-1 text-sm text-[#587090]'>
-          Organizador: visualiza y registra eventos de desastre natural por ciudad.
-        </Text>
-      </View>
-
       {createdEventLabel ? (
         <Animated.View
-          className='absolute left-5 right-5 top-48 rounded-xl bg-[#183e80] px-4 py-3'
+          className='absolute left-5 right-5 top-24 rounded-xl bg-[#183e80] px-4 py-3'
           entering={FadeInUp.duration(350)}
           layout={Layout.springify()}
         >
@@ -95,10 +86,10 @@ export function CreateMissionScreen() {
         </Animated.View>
       ) : null}
 
-      <View className='absolute bottom-8 right-5 items-end'>
+      <View className='absolute left-5 top-56 z-40 items-start'>
         {isEventMenuOpen ? (
           <Animated.View
-            className='mb-3 w-56 rounded-2xl border border-[#d8e7ff] bg-white p-3'
+            className='mb-3 w-64 rounded-2xl border border-[#d8e7ff] bg-white p-3'
             entering={FadeInDown.duration(260)}
             layout={Layout.springify()}
           >
@@ -106,7 +97,7 @@ export function CreateMissionScreen() {
               className='flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
               onPress={() => setIsCreateEventOpen((current) => !current)}
             >
-              <MaterialIcons color='#2f68d8' name='add-circle-outline' size={20} />
+              <MaterialIcons color='#2f68d8' name='warning-amber' size={20} />
               <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>
                 Crear Evento (Desastre)
               </Text>
@@ -115,11 +106,10 @@ export function CreateMissionScreen() {
         ) : null}
 
         <Pressable
-          className='flex-row items-center rounded-full bg-[#1f5fe0] px-5 py-3'
+          className='h-16 w-16 items-center justify-center rounded-full bg-[#d63c4c]'
           onPress={() => setIsEventMenuOpen((current) => !current)}
         >
-          <FontAwesome5 color='#fff' name='calendar-plus' size={16} />
-          <Text className='ml-2 text-base font-bold text-white'>Eventos</Text>
+          <MaterialIcons color='#fff' name='warning' size={28} />
         </Pressable>
       </View>
 
@@ -186,6 +176,8 @@ export function CreateMissionScreen() {
           </View>
         </Animated.View>
       ) : null}
+
+      <OrganizerBottomTabs activeTab='inicio' />
     </SafeAreaView>
   );
 }

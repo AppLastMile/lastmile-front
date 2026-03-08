@@ -7,7 +7,7 @@ import '../global.css';
 export default function RootLayout() {
   return (
     <AppProvider>
-      <Stack screenOptions={{ headerShown: false }} />
+      <Stack screenOptions={{ headerShown: false, animation: 'fade' }} />
     </AppProvider>
   );
 }
