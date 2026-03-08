@@ -1,15 +1,19 @@
 import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import { useMemo, useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import MapView, { Marker, UrlTile, type Region } from 'react-native-maps';
 import Animated, { FadeInDown, FadeInUp, Layout } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   COLOMBIAN_CITIES,
@@ -24,19 +28,35 @@ const COLOMBIA_REGION: Region = {
   longitudeDelta: 13,
 };
 
+const FORM_GAP_ABOVE_TABS = 2;
+const ORGANIZER_TABS_HEIGHT = 72;
+const FORM_MIN_HEIGHT = 430;
+const FORM_VERTICAL_MARGIN = 110;
+
 export function CreateMissionScreen() {
   const mapRef = useRef<MapView | null>(null);
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const tabsBottomOffset = Math.max(insets.bottom - 6, 6);
+  const maxFormHeight = Math.max(
+    FORM_MIN_HEIGHT,
+    windowHeight - (tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS + FORM_VERTICAL_MARGIN)
+  );
   const [isEventMenuOpen, setIsEventMenuOpen] = useState(false);
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
   const [eventName, setEventName] = useState('');
   const [selectedCity, setSelectedCity] = useState<ColombianCity | null>(null);
   const [createdEventLabel, setCreatedEventLabel] = useState('');
+  const [formContentHeight, setFormContentHeight] = useState(FORM_MIN_HEIGHT);
 
   const canCreateEvent = useMemo(
     () => eventName.trim().length > 2 && Boolean(selectedCity),
     [eventName, selectedCity]
   );
+
+  const panelHeight = Math.min(Math.max(formContentHeight + 16, FORM_MIN_HEIGHT), maxFormHeight);
+  const shouldEnableScroll = formContentHeight + 16 > maxFormHeight;
 
   const handleSelectCity = (city: ColombianCity) => {
     setSelectedCity(city);
@@ -86,7 +106,7 @@ export function CreateMissionScreen() {
         </Animated.View>
       ) : null}
 
-      <View className='absolute left-5 top-56 z-40 items-start'>
+      <View className='absolute left-5 top-56 items-start' style={{ zIndex: 70, elevation: 70 }}>
         {isEventMenuOpen ? (
           <Animated.View
             className='mb-3 w-64 rounded-2xl border border-[#d8e7ff] bg-white p-3'
@@ -114,67 +134,88 @@ export function CreateMissionScreen() {
       </View>
 
       {isCreateEventOpen ? (
-        <Animated.View
-          className='absolute bottom-0 left-0 right-0 max-h-[70%] rounded-t-3xl border border-[#d5e3fb] bg-white px-5 pb-8 pt-5'
-          entering={FadeInUp.duration(300)}
-          layout={Layout.springify()}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          className='absolute bottom-0 left-0 right-0'
+          style={{
+            bottom: tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS,
+            zIndex: 45,
+            elevation: 45,
+          }}
         >
-          <Text className='text-lg font-extrabold text-[#14243f]'>Crear Evento De Desastre Natural</Text>
-          <Text className='mt-1 text-sm text-[#5f7396]'>
-            Registra rapidamente el incidente y ubicalo en una ciudad de Colombia.
-          </Text>
-
-          <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Nombre Del Evento</Text>
-          <TextInput
-            className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-            onChangeText={setEventName}
-            placeholder='Ej: Inundacion por lluvias intensas'
-            placeholderTextColor='#8ba2c3'
-            value={eventName}
-          />
-
-          <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Ciudad</Text>
-          <Pressable
-            className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3'
-            onPress={() => setIsCitySelectorOpen((current) => !current)}
+          <Animated.View
+            className='rounded-t-3xl border border-[#d5e3fb] bg-white px-5 pt-5'
+            entering={FadeInUp.duration(300)}
+            layout={Layout.springify()}
+            style={{ height: panelHeight }}
           >
-            <Text className='text-[#1b3357]'>
-              {selectedCity ? selectedCity.name : 'Selecciona una ciudad de Colombia'}
-            </Text>
-          </Pressable>
+            <ScrollView
+              contentContainerStyle={{ paddingBottom: 24 }}
+              keyboardShouldPersistTaps='handled'
+              onContentSizeChange={(_, contentHeight) => {
+                setFormContentHeight(contentHeight);
+              }}
+              scrollEnabled={shouldEnableScroll}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text className='text-lg font-extrabold text-[#14243f]'>Crear Evento De Desastre Natural</Text>
+              <Text className='mt-1 text-sm text-[#5f7396]'>
+                Registra rapidamente el incidente y ubicalo en una ciudad de Colombia.
+              </Text>
 
-          {isCitySelectorOpen ? (
-            <ScrollView className='mt-3 max-h-40 rounded-xl border border-[#d6e4fb] bg-[#fafdff]'>
-              {COLOMBIAN_CITIES.map((city) => (
+              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Nombre Del Evento</Text>
+              <TextInput
+                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
+                onChangeText={setEventName}
+                placeholder='Ej: Inundacion por lluvias intensas'
+                placeholderTextColor='#8ba2c3'
+                value={eventName}
+              />
+
+              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Ciudad</Text>
+              <Pressable
+                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3'
+                onPress={() => setIsCitySelectorOpen((current) => !current)}
+              >
+                <Text className='text-[#1b3357]'>
+                  {selectedCity ? selectedCity.name : 'Selecciona una ciudad de Colombia'}
+                </Text>
+              </Pressable>
+
+              {isCitySelectorOpen ? (
+                <ScrollView className='mt-3 max-h-40 rounded-xl border border-[#d6e4fb] bg-[#fafdff]'>
+                  {COLOMBIAN_CITIES.map((city) => (
+                    <Pressable
+                      className='border-b border-[#e8effd] px-4 py-3'
+                      key={city.id}
+                      onPress={() => handleSelectCity(city)}
+                    >
+                      <Text className='text-[#20375d]'>{city.name}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+
+              <View className='mt-6 flex-row items-center justify-between'>
                 <Pressable
-                  className='border-b border-[#e8effd] px-4 py-3'
-                  key={city.id}
-                  onPress={() => handleSelectCity(city)}
+                  className='rounded-xl border border-[#d3def3] px-4 py-3'
+                  onPress={() => setIsCreateEventOpen(false)}
                 >
-                  <Text className='text-[#20375d]'>{city.name}</Text>
+                  <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
                 </Pressable>
-              ))}
+                <Pressable
+                  className={`rounded-xl px-5 py-3 ${
+                    canCreateEvent ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'
+                  }`}
+                  disabled={!canCreateEvent}
+                  onPress={handleCreateEvent}
+                >
+                  <Text className='font-semibold text-white'>Crear Evento</Text>
+                </Pressable>
+              </View>
             </ScrollView>
-          ) : null}
-
-          <View className='mt-6 flex-row items-center justify-between'>
-            <Pressable
-              className='rounded-xl border border-[#d3def3] px-4 py-3'
-              onPress={() => setIsCreateEventOpen(false)}
-            >
-              <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
-            </Pressable>
-            <Pressable
-              className={`rounded-xl px-5 py-3 ${
-                canCreateEvent ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'
-              }`}
-              disabled={!canCreateEvent}
-              onPress={handleCreateEvent}
-            >
-              <Text className='font-semibold text-white'>Crear Evento</Text>
-            </Pressable>
-          </View>
-        </Animated.View>
+          </Animated.View>
+        </KeyboardAvoidingView>
       ) : null}
 
       <OrganizerBottomTabs activeTab='inicio' />
