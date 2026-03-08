@@ -54,6 +54,7 @@ function TabIcon({ focused, color, name }: TabIconProps) {
 
 export default function TabsLayout() {
   const { currentUser } = useAuthSession();
+  const isDonor = currentUser?.role === 'donor';
 
   if (!currentUser) {
     return <Redirect href='/(auth)/login' />;
@@ -67,6 +68,7 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: '#8e8e93',
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
+          display: isDonor ? 'none' : 'flex',
           position: 'absolute',
           left: 14,
           right: 14,
@@ -96,6 +98,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name='home'
         options={{
+          href: isDonor ? null : undefined,
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon color={color} focused={focused} name='home' />
@@ -105,16 +108,16 @@ export default function TabsLayout() {
       <Tabs.Screen
         name='missions'
         options={{
-          title: 'Missions',
+          title: isDonor ? 'Campanas' : 'Missions',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon color={color} focused={focused} name='reader' />
+            <TabIcon color={color} focused={focused} name={isDonor ? 'megaphone' : 'reader'} />
           ),
         }}
       />
       <Tabs.Screen
         name='map'
         options={{
-          title: 'Map',
+          title: isDonor ? 'Inicio' : 'Map',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon color={color} focused={focused} name='map' />
           ),
@@ -123,6 +126,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name='profile'
         options={{
+          href: isDonor ? null : undefined,
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
             <TabIcon color={color} focused={focused} name='person' />
