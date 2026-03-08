@@ -1,7 +1,15 @@
 import { FontAwesome5 } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
+
+import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 
 export default function TabsLayout() {
+  const { currentUser } = useAuthSession();
+
+  if (!currentUser) {
+    return <Redirect href='/(auth)/login' />;
+  }
+
   return (
     <Tabs
       screenOptions={{
