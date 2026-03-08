@@ -6,6 +6,8 @@ import {
   findColombianCityByName,
   type ColombianCity,
 } from '@/modules/missions/constants/colombianCities';
+import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 
 const COLOMBIA_REGION: Region = {
@@ -21,6 +23,8 @@ type EventWithCity = {
 };
 
 export function MapScreen() {
+  const { currentUser } = useAuthSession();
+  const isDonor = currentUser?.role === 'donor';
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -61,25 +65,31 @@ export function MapScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
-      <View className='px-4 pb-3 pt-2'>
-        <Text className='text-2xl font-extrabold text-[#16325d]'>Mapa de eventos</Text>
-        <Text className='mt-1 text-sm text-[#4d648a]'>
-          Eventos activos cargados desde el backend.
-        </Text>
-        <View className='mt-3 flex-row items-center justify-between'>
-          <Text className='text-sm font-semibold text-[#2a456e]'>
-            Marcadores: {mappedEvents.length}
+      {!isDonor ? (
+        <View className='px-4 pb-3 pt-2'>
+          <Text className='text-2xl font-extrabold text-[#16325d]'>Mapa de eventos</Text>
+          <Text className='mt-1 text-sm text-[#4d648a]'>
+            Eventos activos cargados desde el backend.
           </Text>
-          <Pressable
-            className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90'
-            onPress={loadEvents}
-          >
-            <Text className='font-semibold text-white'>Recargar</Text>
-          </Pressable>
+          <View className='mt-3 flex-row items-center justify-between'>
+            <Text className='text-sm font-semibold text-[#2a456e]'>
+              Marcadores: {mappedEvents.length}
+            </Text>
+            <Pressable
+              className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90'
+              onPress={loadEvents}
+            >
+              <Text className='font-semibold text-white'>Recargar</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      ) : null}
 
-      <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
+      <View
+        className={`flex-1 overflow-hidden ${
+          isDonor ? 'border-0' : 'rounded-t-3xl border border-[#d3e2ff]'
+        }`}
+      >
         <MapView initialRegion={COLOMBIA_REGION} style={{ flex: 1 }}>
           <UrlTile
             maximumZ={19}
@@ -114,6 +124,8 @@ export function MapScreen() {
           </View>
         ) : null}
       </View>
+
+      {isDonor ? <DonorBottomTabs activeTab='inicio' /> : null}
     </SafeAreaView>
   );
 }

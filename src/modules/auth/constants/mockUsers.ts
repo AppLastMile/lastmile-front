@@ -21,7 +21,7 @@ export const MOCK_USERS: MockUser[] = [
     label: 'Donante',
     email: 'donante@lastmile.com',
     password: '123456',
-    redirectTo: '/(tabs)/missions',
+    redirectTo: '/(tabs)/map',
   },
   {
     role: 'volunteer',
