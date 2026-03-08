@@ -81,10 +81,6 @@ export function OrganizerCampaignsScreen() {
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [moneyDraftByCampaign, setMoneyDraftByCampaign] = useState<Record<number, string>>({});
-  const [itemsDraftByCampaign, setItemsDraftByCampaign] = useState<Record<number, string>>({});
-  const [itemsCollectedByCampaign, setItemsCollectedByCampaign] = useState<Record<number, number>>({});
-
   const [chatCampaignId, setChatCampaignId] = useState<number | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatByCampaign, setChatByCampaign] = useState<Record<number, ChatMessage[]>>({});
@@ -183,34 +179,6 @@ export function OrganizerCampaignsScreen() {
     }
   };
 
-  const handleAddMoney = (campaignId: number) => {
-    const value = Number((moneyDraftByCampaign[campaignId] ?? '').replace(/[^0-9]/g, ''));
-    if (!value || value <= 0) {
-      return;
-    }
-
-    setCampaigns((prev) =>
-      prev.map((campaignItem) =>
-        campaignItem.id === campaignId
-          ? { ...campaignItem, collectedMoney: campaignItem.collectedMoney + value }
-          : campaignItem
-      )
-    );
-    setMoneyDraftByCampaign((prev) => ({ ...prev, [campaignId]: '' }));
-  };
-
-  const handleAddItems = (campaignId: number) => {
-    const value = Number((itemsDraftByCampaign[campaignId] ?? '').replace(/[^0-9]/g, ''));
-    if (!value || value <= 0) {
-      return;
-    }
-
-    setItemsCollectedByCampaign((prev) => ({
-      ...prev,
-      [campaignId]: (prev[campaignId] ?? 0) + value,
-    }));
-    setItemsDraftByCampaign((prev) => ({ ...prev, [campaignId]: '' }));
-  };
 
   const openChat = (campaignId: number) => {
     setChatCampaignId(campaignId);
@@ -279,7 +247,10 @@ export function OrganizerCampaignsScreen() {
         <ScrollView className='mt-4' contentContainerStyle={{ gap: 12, paddingBottom: 120 }}>
           {campaigns.map((campaignItem, index) => {
             const eventInfo = eventsById.get(campaignItem.eventId);
-            const itemsCollected = itemsCollectedByCampaign[campaignItem.id] ?? 0;
+            const progress =
+              campaignItem.goalMoney > 0
+                ? Math.min(100, Math.round((campaignItem.collectedMoney / campaignItem.goalMoney) * 100))
+                : 0;
 
             return (
               <Animated.View
@@ -311,49 +282,18 @@ export function OrganizerCampaignsScreen() {
                     </Text>
                   </View>
                   <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
-                    <Text className='text-xs font-semibold text-[#4b648d]'>Elementos</Text>
+                    <Text className='text-xs font-semibold text-[#4b648d]'>Meta</Text>
                     <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
-                      {itemsCollected}
+                      {formatMoney(campaignItem.goalMoney)}
                     </Text>
                   </View>
                 </View>
 
-                <View className='mt-3 flex-row items-center gap-2'>
-                  <TextInput
-                    className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
-                    keyboardType='number-pad'
-                    onChangeText={(value) =>
-                      setMoneyDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                    }
-                    placeholder='Monto COP'
-                    placeholderTextColor='#8ea6c8'
-                    value={moneyDraftByCampaign[campaignItem.id] ?? ''}
+                <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
+                  <View
+                    className='h-full rounded-full bg-[#1f5fe0]'
+                    style={{ width: `${Math.max(6, progress)}%` }}
                   />
-                  <Pressable
-                    className='rounded-xl bg-[#1f5fe0] px-3 py-2'
-                    onPress={() => handleAddMoney(campaignItem.id)}
-                  >
-                    <Text className='text-xs font-bold text-white'>Agregar fondos</Text>
-                  </Pressable>
-                </View>
-
-                <View className='mt-2 flex-row items-center gap-2'>
-                  <TextInput
-                    className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
-                    keyboardType='number-pad'
-                    onChangeText={(value) =>
-                      setItemsDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                    }
-                    placeholder='Cantidad de elementos'
-                    placeholderTextColor='#8ea6c8'
-                    value={itemsDraftByCampaign[campaignItem.id] ?? ''}
-                  />
-                  <Pressable
-                    className='rounded-xl bg-[#1d8a51] px-3 py-2'
-                    onPress={() => handleAddItems(campaignItem.id)}
-                  >
-                    <Text className='text-xs font-bold text-white'>Agregar items</Text>
-                  </Pressable>
                 </View>
               </Animated.View>
             );
