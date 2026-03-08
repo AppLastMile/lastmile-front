@@ -1,6 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,8 +19,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   COLOMBIAN_CITIES,
   type ColombianCity,
+  findColombianCityByName,
 } from '@/modules/missions/constants/colombianCities';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
+import {
+  createEvent,
+  type EventSummary,
+  getEvents,
+} from '@/services/api/eventsService';
 
 const COLOMBIA_REGION: Region = {
   latitude: 4.5709,
@@ -32,6 +39,8 @@ const FORM_GAP_ABOVE_TABS = 2;
 const ORGANIZER_TABS_HEIGHT = 72;
 const FORM_MIN_HEIGHT = 380;
 const FORM_VERTICAL_MARGIN = 110;
+const DEFAULT_CREATED_BY = 1;
+const DEFAULT_DISASTER_TYPE = 'desastre_natural';
 
 export function CreateMissionScreen() {
   const mapRef = useRef<MapView | null>(null);
@@ -46,18 +55,62 @@ export function CreateMissionScreen() {
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
   const [eventName, setEventName] = useState('');
+  const [disasterType, setDisasterType] = useState(DEFAULT_DISASTER_TYPE);
   const [eventDescription, setEventDescription] = useState('');
   const [selectedCity, setSelectedCity] = useState<ColombianCity | null>(null);
   const [createdEventLabel, setCreatedEventLabel] = useState('');
   const [formContentHeight, setFormContentHeight] = useState(FORM_MIN_HEIGHT);
+  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const canCreateEvent = useMemo(
-    () => eventName.trim().length > 2 && Boolean(selectedCity),
-    [eventName, selectedCity]
+    () =>
+      eventName.trim().length > 2 &&
+      disasterType.trim().length > 2 &&
+      Boolean(selectedCity) &&
+      !isSubmitting,
+    [disasterType, eventName, isSubmitting, selectedCity]
+  );
+
+  const mappedEvents = useMemo(
+    () =>
+      events
+        .map((eventItem) => {
+          const city = findColombianCityByName(eventItem.city);
+
+          if (!city) {
+            return null;
+          }
+
+          return { event: eventItem, city };
+        })
+        .filter((eventItem): eventItem is { event: EventSummary; city: ColombianCity } => Boolean(eventItem)),
+    [events]
   );
 
   const panelHeight = Math.min(Math.max(formContentHeight + 16, FORM_MIN_HEIGHT), maxFormHeight);
   const shouldEnableScroll = formContentHeight + 16 > maxFormHeight;
+
+  const loadEvents = useCallback(async () => {
+    setIsLoadingEvents(true);
+    setLoadError(null);
+
+    try {
+      const response = await getEvents({ page: 1, limit: 100 });
+      setEvents(response.data);
+    } catch {
+      setLoadError('No fue posible cargar eventos desde backend.');
+    } finally {
+      setIsLoadingEvents(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
 
   const handleSelectCity = (city: ColombianCity) => {
     setSelectedCity(city);
@@ -65,17 +118,39 @@ export function CreateMissionScreen() {
     mapRef.current?.animateToRegion(city.region, 700);
   };
 
-  const handleCreateEvent = () => {
+  const handleCreateEvent = async () => {
     if (!selectedCity) {
       return;
     }
 
-    const label = `${eventName.trim()} - ${selectedCity.name}`;
-    setCreatedEventLabel(label);
-    setEventDescription('');
-    setIsCreateEventOpen(false);
-    setIsEventMenuOpen(false);
-    mapRef.current?.animateToRegion(selectedCity.region, 700);
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const createdEvent = await createEvent({
+        name: eventName.trim(),
+        disasterType: disasterType.trim(),
+        city: selectedCity.name,
+        description: eventDescription.trim() || 'Evento registrado desde aplicacion movil',
+        date: new Date().toISOString(),
+        createdBy: DEFAULT_CREATED_BY,
+      });
+
+      setEvents((prev) => [createdEvent, ...prev]);
+      setCreatedEventLabel(`${createdEvent.name} - ${createdEvent.city}`);
+      setEventName('');
+      setDisasterType(DEFAULT_DISASTER_TYPE);
+      setEventDescription('');
+      setIsCreateEventOpen(false);
+      setIsEventMenuOpen(false);
+      mapRef.current?.animateToRegion(selectedCity.region, 700);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'No se pudo crear el evento.';
+      setSubmitError(`No se pudo crear el evento. ${errorMessage}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -86,7 +161,19 @@ export function CreateMissionScreen() {
           urlTemplate='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
           zIndex={-1}
         />
-        {selectedCity ? (
+        {mappedEvents.map(({ event, city }) => (
+          <Marker
+            coordinate={{
+              latitude: city.region.latitude,
+              longitude: city.region.longitude,
+            }}
+            description={event.description}
+            key={event.id}
+            title={event.name}
+          />
+        ))}
+
+        {selectedCity && isCreateEventOpen ? (
           <Marker
             coordinate={{
               latitude: selectedCity.region.latitude,
@@ -97,6 +184,18 @@ export function CreateMissionScreen() {
           />
         ) : null}
       </MapView>
+
+      {isLoadingEvents ? (
+        <View className='absolute right-4 top-24 rounded-full bg-white px-3 py-2'>
+          <ActivityIndicator color='#1f5fe0' size='small' />
+        </View>
+      ) : null}
+
+      {loadError ? (
+        <View className='absolute right-4 top-24 rounded-xl bg-[#ffecef] px-3 py-2'>
+          <Text className='text-xs text-[#9f2238]'>{loadError}</Text>
+        </View>
+      ) : null}
 
       {createdEventLabel ? (
         <Animated.View
@@ -133,6 +232,13 @@ export function CreateMissionScreen() {
               <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>
                 Crear Evento (Desastre)
               </Text>
+            </Pressable>
+            <Pressable
+              className='mt-2 flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
+              onPress={loadEvents}
+            >
+              <MaterialIcons color='#2f68d8' name='refresh' size={20} />
+              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Recargar eventos</Text>
             </Pressable>
           </Animated.View>
         ) : null}
@@ -177,6 +283,15 @@ export function CreateMissionScreen() {
                 value={eventName}
               />
 
+              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Tipo De Desastre</Text>
+              <TextInput
+                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
+                onChangeText={setDisasterType}
+                placeholder='Ej: inundacion'
+                placeholderTextColor='#8ba2c3'
+                value={disasterType}
+              />
+
               <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Descripcion</Text>
               <TextInput
                 className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
@@ -213,6 +328,10 @@ export function CreateMissionScreen() {
                 </ScrollView>
               ) : null}
 
+              {submitError ? (
+                <Text className='mt-3 text-sm text-[#c3324d]'>{submitError}</Text>
+              ) : null}
+
               <View className='mt-6 flex-row items-center justify-between'>
                 <Pressable
                   className='rounded-xl border border-[#d3def3] px-4 py-3'
@@ -227,7 +346,9 @@ export function CreateMissionScreen() {
                   disabled={!canCreateEvent}
                   onPress={handleCreateEvent}
                 >
-                  <Text className='font-semibold text-white'>Crear Evento</Text>
+                  <Text className='font-semibold text-white'>
+                    {isSubmitting ? 'Creando...' : 'Crear Evento'}
+                  </Text>
                 </Pressable>
               </View>
             </ScrollView>

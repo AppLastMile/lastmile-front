@@ -111,3 +111,19 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
 ];
+
+function normalizeCityName(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+export function findColombianCityByName(cityName: string) {
+  const normalizedTarget = normalizeCityName(cityName);
+
+  return COLOMBIAN_CITIES.find(
+    (city) => normalizeCityName(city.name) === normalizedTarget
+  );
+}
