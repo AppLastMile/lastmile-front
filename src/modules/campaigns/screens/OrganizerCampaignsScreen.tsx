@@ -31,6 +31,34 @@ type ChatMessage = {
 
 const DEFAULT_CREATED_BY = 1;
 
+function getErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return 'Error desconocido.';
+  }
+
+  const rawMessage = error.message?.trim();
+
+  if (!rawMessage) {
+    return 'Error desconocido.';
+  }
+
+  try {
+    const parsed = JSON.parse(rawMessage) as { message?: string | string[] };
+
+    if (Array.isArray(parsed.message)) {
+      return parsed.message.join(' | ');
+    }
+
+    if (typeof parsed.message === 'string') {
+      return parsed.message;
+    }
+
+    return rawMessage;
+  } catch {
+    return rawMessage;
+  }
+}
+
 function formatMoney(value: number) {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
@@ -128,6 +156,7 @@ export function OrganizerCampaignsScreen() {
     }
 
     const parsedGoalMoney = Number(goalMoney.replace(/[^0-9]/g, '')) || 0;
+    const selectedEvent = eventsById.get(selectedEventId);
 
     setIsSubmitting(true);
     setFormError(null);
@@ -139,7 +168,7 @@ export function OrganizerCampaignsScreen() {
         campaignType: 'mixed',
         goalMoney: parsedGoalMoney,
         eventId: selectedEventId,
-        createdBy: DEFAULT_CREATED_BY,
+        createdBy: selectedEvent?.createdBy ?? DEFAULT_CREATED_BY,
       });
 
       setCampaigns((prev) => [createdCampaign, ...prev]);
@@ -147,8 +176,8 @@ export function OrganizerCampaignsScreen() {
       setCampaignDescription('');
       setGoalMoney('0');
       setIsCreateOpen(false);
-    } catch {
-      setFormError('No se pudo crear la campana. Revisa que el backend este disponible.');
+    } catch (error) {
+      setFormError(`No se pudo crear la campana. ${getErrorMessage(error)}`);
     } finally {
       setIsSubmitting(false);
     }
