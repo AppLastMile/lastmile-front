@@ -1,4 +1,4 @@
-import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -30,7 +30,7 @@ const COLOMBIA_REGION: Region = {
 
 const FORM_GAP_ABOVE_TABS = 2;
 const ORGANIZER_TABS_HEIGHT = 72;
-const FORM_MIN_HEIGHT = 430;
+const FORM_MIN_HEIGHT = 380;
 const FORM_VERTICAL_MARGIN = 110;
 
 export function CreateMissionScreen() {
@@ -46,6 +46,7 @@ export function CreateMissionScreen() {
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
   const [eventName, setEventName] = useState('');
+  const [eventDescription, setEventDescription] = useState('');
   const [selectedCity, setSelectedCity] = useState<ColombianCity | null>(null);
   const [createdEventLabel, setCreatedEventLabel] = useState('');
   const [formContentHeight, setFormContentHeight] = useState(FORM_MIN_HEIGHT);
@@ -71,6 +72,7 @@ export function CreateMissionScreen() {
 
     const label = `${eventName.trim()} - ${selectedCity.name}`;
     setCreatedEventLabel(label);
+    setEventDescription('');
     setIsCreateEventOpen(false);
     setIsEventMenuOpen(false);
     mapRef.current?.animateToRegion(selectedCity.region, 700);
@@ -90,7 +92,7 @@ export function CreateMissionScreen() {
               latitude: selectedCity.region.latitude,
               longitude: selectedCity.region.longitude,
             }}
-            description={eventName.trim() || 'Evento pendiente'}
+            description={eventDescription.trim() || eventName.trim() || 'Evento pendiente'}
             title={selectedCity.name}
           />
         ) : null}
@@ -106,10 +108,20 @@ export function CreateMissionScreen() {
         </Animated.View>
       ) : null}
 
-      <View className='absolute left-5 top-56 items-start' style={{ zIndex: 70, elevation: 70 }}>
+      <View
+        className='absolute left-4 items-start'
+        style={{ top: insets.top + 16, zIndex: 70, elevation: 70 }}
+      >
+        <Pressable
+          className='h-16 w-16 items-center justify-center rounded-full bg-[#d63c4c]'
+          onPress={() => setIsEventMenuOpen((current) => !current)}
+        >
+          <MaterialIcons color='#fff' name='warning' size={28} />
+        </Pressable>
+
         {isEventMenuOpen ? (
           <Animated.View
-            className='mb-3 w-64 rounded-2xl border border-[#d8e7ff] bg-white p-3'
+            className='mt-3 w-64 rounded-2xl border border-[#d8e7ff] bg-white p-3'
             entering={FadeInDown.duration(260)}
             layout={Layout.springify()}
           >
@@ -124,13 +136,6 @@ export function CreateMissionScreen() {
             </Pressable>
           </Animated.View>
         ) : null}
-
-        <Pressable
-          className='h-16 w-16 items-center justify-center rounded-full bg-[#d63c4c]'
-          onPress={() => setIsEventMenuOpen((current) => !current)}
-        >
-          <MaterialIcons color='#fff' name='warning' size={28} />
-        </Pressable>
       </View>
 
       {isCreateEventOpen ? (
@@ -144,7 +149,7 @@ export function CreateMissionScreen() {
           }}
         >
           <Animated.View
-            className='rounded-t-3xl border border-[#d5e3fb] bg-white px-5 pt-5'
+            className='rounded-3xl border border-[#d5e3fb] bg-white px-5 pt-5'
             entering={FadeInUp.duration(300)}
             layout={Layout.springify()}
             style={{ height: panelHeight }}
@@ -170,6 +175,18 @@ export function CreateMissionScreen() {
                 placeholder='Ej: Inundacion por lluvias intensas'
                 placeholderTextColor='#8ba2c3'
                 value={eventName}
+              />
+
+              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Descripcion</Text>
+              <TextInput
+                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
+                multiline
+                numberOfLines={4}
+                onChangeText={setEventDescription}
+                placeholder='Ej: Desbordamiento del rio por lluvias continuas en la zona norte.'
+                placeholderTextColor='#8ba2c3'
+                style={{ minHeight: 96, textAlignVertical: 'top' }}
+                value={eventDescription}
               />
 
               <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Ciudad</Text>
