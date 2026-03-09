@@ -310,6 +310,36 @@ export function OrganizerCampaignsScreen() {
           return prev;
         }
 
+        const normalizedIncomingMessage = event.message.trim().toLowerCase();
+        const optimisticIndex = bucket.findIndex((item) => {
+          const isOptimistic = String(item.id).startsWith('local-');
+          if (!isOptimistic) {
+            return false;
+          }
+
+          return item.message.trim().toLowerCase() === normalizedIncomingMessage;
+        });
+
+        if (optimisticIndex >= 0) {
+          const nextBucket = [...bucket];
+          nextBucket[optimisticIndex] = {
+            id: nextId,
+            author: event.authorName ?? `Usuario ${event.authorId ?? ''}`.trim(),
+            message: event.message,
+            createdAt: event.createdAt
+              ? new Date(event.createdAt).toLocaleTimeString('es-CO', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : nextBucket[optimisticIndex].createdAt,
+          };
+
+          return {
+            ...prev,
+            [event.campaignId]: nextBucket,
+          };
+        }
+
         return {
           ...prev,
           [event.campaignId]: [
@@ -456,10 +486,12 @@ export function OrganizerCampaignsScreen() {
       return;
     }
 
+    const trimmedMessage = chatDraft.trim();
+
     const optimisticMessage: ChatMessage = {
       id: `local-${Date.now()}`,
       author: currentUser?.label ?? 'Organizador',
-      message: chatDraft.trim(),
+      message: trimmedMessage,
       createdAt: new Date().toLocaleTimeString('es-CO', {
         hour: '2-digit',
         minute: '2-digit',
@@ -473,7 +505,7 @@ export function OrganizerCampaignsScreen() {
 
     emitChatSend({
       campaignId: Number(chatCampaignId),
-      message: chatDraft.trim(),
+      message: trimmedMessage,
     });
 
     setChatDraft('');
