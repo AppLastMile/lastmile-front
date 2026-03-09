@@ -11,10 +11,44 @@ type RealtimeAuth = {
 type RealtimeHandler<T = unknown> = (payload: T) => void;
 
 let socket: Socket | null = null;
+let connectErrors = 0;
+
+const MAX_CONNECT_ERRORS = 3;
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
+const DEFAULT_WS_NAMESPACE = '/ws';
+const DEFAULT_WS_PATH = '/socket.io';
 
-function getEnvValue(key: string) {
+type KnownEnvKey =
+  | 'EXPO_PUBLIC_API_URL'
+  | 'EXPO_PUBLIC_WS_URL'
+  | 'EXPO_PUBLIC_WS_NAMESPACE'
+  | 'EXPO_PUBLIC_WS_PATH'
+  | 'EXPO_PUBLIC_WS_TRANSPORTS'
+  | 'EXPO_PUBLIC_WS_ALLOW_ANONYMOUS'
+  | 'EXPO_PUBLIC_WS_DEBUG';
+
+const KNOWN_EXPO_ENV: Record<KnownEnvKey, string | undefined> = {
+  EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
+  EXPO_PUBLIC_WS_URL: process.env.EXPO_PUBLIC_WS_URL,
+  EXPO_PUBLIC_WS_NAMESPACE: process.env.EXPO_PUBLIC_WS_NAMESPACE,
+  EXPO_PUBLIC_WS_PATH: process.env.EXPO_PUBLIC_WS_PATH,
+  EXPO_PUBLIC_WS_TRANSPORTS: process.env.EXPO_PUBLIC_WS_TRANSPORTS,
+  EXPO_PUBLIC_WS_ALLOW_ANONYMOUS: process.env.EXPO_PUBLIC_WS_ALLOW_ANONYMOUS,
+  EXPO_PUBLIC_WS_DEBUG: process.env.EXPO_PUBLIC_WS_DEBUG,
+};
+
+function getKnownEnvMap() {
+  return KNOWN_EXPO_ENV;
+}
+
+function getEnvValue(key: KnownEnvKey) {
+  const knownEnv = getKnownEnvMap()[key];
+
+  if (knownEnv) {
+    return knownEnv;
+  }
+
   return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key];
 }
 
@@ -38,6 +72,11 @@ function getExpoHostIp() {
   return hostUri.split(':')[0] ?? null;
 }
 
+function getBrowserHost() {
+  const location = (globalThis as { location?: { hostname?: string } }).location;
+  return location?.hostname ?? null;
+}
+
 function getApiBaseUrl() {
   return getEnvValue('EXPO_PUBLIC_API_URL') ?? DEFAULT_API_BASE_URL;
 }
@@ -46,7 +85,36 @@ function resolveWsBaseUrl() {
   const envWsUrl = getEnvValue('EXPO_PUBLIC_WS_URL');
 
   if (envWsUrl) {
-    return envWsUrl;
+    try {
+      const parsed = new URL(envWsUrl);
+
+      // Keep WS origin host-only. Namespace and socket path are configured separately.
+      parsed.pathname = '';
+
+      const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+
+      if (isLocalhost) {
+        if (Platform.OS === 'web') {
+          const browserHost = getBrowserHost();
+
+          if (browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1') {
+            parsed.hostname = browserHost;
+          }
+        } else {
+          const expoHostIp = getExpoHostIp();
+
+          if (expoHostIp) {
+            parsed.hostname = expoHostIp;
+          } else if (Platform.OS === 'android') {
+            parsed.hostname = '10.0.2.2';
+          }
+        }
+      }
+
+      return parsed.toString().replace(/\/$/, '');
+    } catch {
+      return envWsUrl;
+    }
   }
 
   const apiUrl = getApiBaseUrl();
@@ -77,7 +145,7 @@ function resolveWsNamespace() {
   const configured = getEnvValue('EXPO_PUBLIC_WS_NAMESPACE')?.trim();
 
   if (!configured) {
-    return '/ws';
+    return DEFAULT_WS_NAMESPACE;
   }
 
   if (!configured.startsWith('/')) {
@@ -85,6 +153,43 @@ function resolveWsNamespace() {
   }
 
   return configured;
+}
+
+function resolveWsPath() {
+  const configured = getEnvValue('EXPO_PUBLIC_WS_PATH')?.trim();
+
+  if (!configured) {
+    return DEFAULT_WS_PATH;
+  }
+
+  // Convert common misconfigurations like '/ws/socket.io' to the expected Socket.IO path.
+  if (configured.endsWith('/socket.io')) {
+    return DEFAULT_WS_PATH;
+  }
+
+  if (!configured.startsWith('/')) {
+    return `/${configured}`;
+  }
+
+  return configured;
+}
+
+function resolveWsTransports() {
+  const configured = getEnvValue('EXPO_PUBLIC_WS_TRANSPORTS')?.trim();
+
+  if (configured) {
+    const normalized = configured
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter((item): item is 'polling' | 'websocket' => item === 'polling' || item === 'websocket');
+
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+
+  // In Expo/React Native, starting with polling is usually more reliable than websocket-first.
+  return Platform.OS === 'web' ? ['websocket', 'polling'] : ['polling', 'websocket'];
 }
 
 function shouldAllowAnonymousWs() {
@@ -110,15 +215,39 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
   }
 
   if (socket && !socket.connected) {
+    // Avoid forcing repeated connect() calls while Socket.IO is already attempting to reconnect.
+    if ((socket as Socket & { active?: boolean }).active) {
+      return socket;
+    }
+
     socket.connect();
     return socket;
   }
 
   const anonymousMode = shouldAllowAnonymousWs();
+  const transports = resolveWsTransports();
+  const baseUrl = resolveWsBaseUrl();
+  const namespace = resolveWsNamespace();
+  const path = resolveWsPath();
 
-  socket = io(`${resolveWsBaseUrl()}${resolveWsNamespace()}`, {
+  logRealtimeDebug('connecting', {
+    platform: Platform.OS,
+    baseUrl,
+    namespace,
+    path,
+    transports,
+  });
+
+  socket = io(`${baseUrl}${namespace}`, {
     autoConnect: true,
-    transports: ['websocket'],
+    timeout: 8000,
+    reconnection: true,
+    reconnectionAttempts: MAX_CONNECT_ERRORS,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    transports,
+    tryAllTransports: true,
+    path,
     auth: anonymousMode
       ? {}
       : {
@@ -129,11 +258,24 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
   });
 
   socket.on('connect', () => {
-    logRealtimeDebug('connected', { id: socket?.id, namespace: resolveWsNamespace() });
+    connectErrors = 0;
+    logRealtimeDebug('connected', {
+      id: socket?.id,
+      baseUrl,
+      namespace,
+      path,
+      transports,
+    });
   });
 
   socket.on('connect_error', (error: unknown) => {
+    connectErrors += 1;
     logRealtimeDebug('connect_error', error);
+
+    if (connectErrors >= MAX_CONNECT_ERRORS) {
+      logRealtimeDebug('connect_error: max retries reached, stopping socket reconnection loop');
+      socket?.disconnect();
+    }
   });
 
   socket.on('disconnect', (reason: unknown) => {
@@ -150,6 +292,7 @@ export function disconnectRealtime() {
 
   socket.disconnect();
   socket = null;
+  connectErrors = 0;
 }
 
 export function isRealtimeConnected() {
