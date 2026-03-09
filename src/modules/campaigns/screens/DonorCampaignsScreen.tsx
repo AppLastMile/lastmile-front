@@ -24,6 +24,14 @@ import {
   type ItemDonationResponse,
 } from '@/services/api/donationsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import {
+  connectRealtime,
+  emitChatSend,
+  joinRealtimeRoom,
+  leaveRealtimeRoom,
+  onChatMessageCreated,
+  onRealtime,
+} from '@/services/realtime/realtimeService';
 import { getUsers, type UserSummary } from '@/services/api/usersService';
 
 type ChatMessage = {
@@ -40,6 +48,23 @@ type PhysicalDonationOption = {
 
 type ItemInventoryByCampaign = Record<number, Record<string, number>>;
 type AuctionMap = Record<number, Auction[]>;
+
+type ChatMessageCreatedEvent = {
+  id: number | string;
+  campaignId: number;
+  authorId?: number;
+  authorName?: string;
+  message: string;
+  createdAt?: string;
+};
+
+type AuctionRealtimeEvent = {
+  campaignId: number;
+};
+
+type InventoryRealtimeEvent = {
+  campaignId: number;
+};
 
 const DEFAULT_DONOR_ID = 1;
 
@@ -183,29 +208,54 @@ export function DonorCampaignsScreen() {
     setIsLoading(true);
     setLoadError(null);
 
-    try {
-      const [campaignsResponse, eventsResponse, usersResponse, itemsResponse] = await Promise.all([
-        getCampaigns(),
-        getEvents({ page: 1, limit: 100 }),
-        getUsers(1, 200),
-        getItemDonations(1, 500),
-      ]);
+    const [campaignsResult, eventsResult, usersResult, itemsResult] = await Promise.allSettled([
+      getCampaigns(),
+      getEvents({ page: 1, limit: 100 }),
+      getUsers(1, 200),
+      getItemDonations(1, 500),
+    ]);
 
-      const nextCampaigns = campaignsResponse.data;
-      const nextUsers = usersResponse.data;
-      const nextItemDonations = normalizeCollection<ItemDonationResponse>(itemsResponse);
+    const failedSources: string[] = [];
 
-      setCampaigns(nextCampaigns);
-      setEvents(eventsResponse.data);
-      setUsers(nextUsers);
-      setItemDonations(nextItemDonations);
-
-      await refreshCampaignAuctions(nextCampaigns.map((campaign) => campaign.id));
-    } catch {
-      setLoadError('No fue posible cargar campanas. Verifica el backend.');
-    } finally {
-      setIsLoading(false);
+    if (campaignsResult.status === 'fulfilled') {
+      setCampaigns(campaignsResult.value.data);
+    } else {
+      failedSources.push(`campanas (${getErrorMessage(campaignsResult.reason)})`);
+      setCampaigns([]);
     }
+
+    if (eventsResult.status === 'fulfilled') {
+      setEvents(eventsResult.value.data);
+    } else {
+      failedSources.push(`eventos (${getErrorMessage(eventsResult.reason)})`);
+      setEvents([]);
+    }
+
+    if (usersResult.status === 'fulfilled') {
+      setUsers(usersResult.value.data);
+    } else {
+      failedSources.push(`usuarios (${getErrorMessage(usersResult.reason)})`);
+      setUsers([]);
+    }
+
+    if (itemsResult.status === 'fulfilled') {
+      setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResult.value));
+    } else {
+      failedSources.push(`inventario (${getErrorMessage(itemsResult.reason)})`);
+      setItemDonations([]);
+    }
+
+    if (campaignsResult.status === 'fulfilled') {
+      await refreshCampaignAuctions(campaignsResult.value.data.map((campaign) => campaign.id));
+    } else {
+      setAuctionsByCampaign({});
+    }
+
+    if (failedSources.length > 0) {
+      setLoadError(`Fallo la carga de: ${failedSources.join(' | ')}`);
+    }
+
+    setIsLoading(false);
   }, [refreshCampaignAuctions]);
 
   useEffect(() => {
@@ -248,6 +298,96 @@ export function DonorCampaignsScreen() {
   );
 
   const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    connectRealtime({
+      userId: donorId,
+      role: currentUser.role,
+    });
+
+    const campaignIds = campaigns.map((campaign) => campaign.id);
+    const rooms = campaignIds.flatMap((campaignId) => [
+      `campaign:${campaignId}:chat`,
+      `campaign:${campaignId}:auctions`,
+      `campaign:${campaignId}:inventory`,
+    ]);
+
+    rooms.forEach((room) => joinRealtimeRoom(room));
+
+    const offChatMessageCreated = onChatMessageCreated<ChatMessageCreatedEvent>((event) => {
+      if (!event?.campaignId || !event.message) {
+        return;
+      }
+
+      setChatByCampaign((prev) => {
+        const bucket = prev[event.campaignId] ?? [];
+        const nextId = String(event.id ?? `ws-${Date.now()}`);
+
+        if (bucket.some((item) => item.id === nextId)) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          [event.campaignId]: [
+            ...bucket,
+            {
+              id: nextId,
+              author: event.authorName ?? `Usuario ${event.authorId ?? ''}`.trim(),
+              message: event.message,
+              createdAt: event.createdAt
+                ? new Date(event.createdAt).toLocaleTimeString('es-CO', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : new Date().toLocaleTimeString('es-CO', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+            },
+          ],
+        };
+      });
+    });
+
+    const handleAuctionRealtime = (event: AuctionRealtimeEvent) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      refreshCampaignAuctions([event.campaignId]);
+    };
+
+    const offAuctionCreated = onRealtime<AuctionRealtimeEvent>('auction.created', handleAuctionRealtime);
+    const offAuctionUpdated = onRealtime<AuctionRealtimeEvent>('auction.updated', handleAuctionRealtime);
+    const offAuctionSold = onRealtime<AuctionRealtimeEvent>('auction.sold', handleAuctionRealtime);
+
+    const offInventoryUpdated = onRealtime<InventoryRealtimeEvent>('campaign.inventory.updated', async (event) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      try {
+        const itemsResponse = await getItemDonations(1, 500);
+        setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResponse));
+      } catch {
+        // Keep last snapshot if refresh fails.
+      }
+    });
+
+    return () => {
+      offChatMessageCreated();
+      offAuctionCreated();
+      offAuctionUpdated();
+      offAuctionSold();
+      offInventoryUpdated();
+      rooms.forEach((room) => leaveRealtimeRoom(room));
+    };
+  }, [campaigns, currentUser, donorId, refreshCampaignAuctions]);
 
   const handleDonateMoney = async (campaign: Campaign) => {
     const value = Number((moneyDraftByCampaign[campaign.id] ?? '').replace(/[^0-9]/g, ''));
@@ -429,8 +569,8 @@ export function DonorCampaignsScreen() {
       return;
     }
 
-    const newMessage: ChatMessage = {
-      id: `msg-${Date.now()}`,
+    const optimisticMessage: ChatMessage = {
+      id: `local-${Date.now()}`,
       author: currentUser?.label ?? 'Donante',
       message: chatDraft.trim(),
       createdAt: new Date().toLocaleTimeString('es-CO', {
@@ -441,8 +581,14 @@ export function DonorCampaignsScreen() {
 
     setChatByCampaign((prev) => ({
       ...prev,
-      [chatCampaignId]: [...(prev[chatCampaignId] ?? []), newMessage],
+      [chatCampaignId]: [...(prev[chatCampaignId] ?? []), optimisticMessage],
     }));
+
+    emitChatSend({
+      campaignId: Number(chatCampaignId),
+      message: chatDraft.trim(),
+    });
+
     setChatDraft('');
   };
 
