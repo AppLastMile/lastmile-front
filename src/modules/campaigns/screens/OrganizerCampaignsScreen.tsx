@@ -20,6 +20,14 @@ import { type Auction, buyAuction, getCampaignAuctions } from '@/services/api/au
 import { type Campaign, createCampaign, getCampaigns } from '@/services/api/campaignsService';
 import { getItemDonations, type ItemDonationResponse } from '@/services/api/donationsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import {
+  connectRealtime,
+  emitChatSend,
+  joinRealtimeRoom,
+  leaveRealtimeRoom,
+  onChatMessageCreated,
+  onRealtime,
+} from '@/services/realtime/realtimeService';
 import { getUsers, type UserSummary } from '@/services/api/usersService';
 
 type ChatMessage = {
@@ -31,6 +39,23 @@ type ChatMessage = {
 
 type AuctionMap = Record<number, Auction[]>;
 type ItemInventoryByCampaign = Record<number, Record<string, number>>;
+
+type ChatMessageCreatedEvent = {
+  id: number | string;
+  campaignId: number;
+  authorId?: number;
+  authorName?: string;
+  message: string;
+  createdAt?: string;
+};
+
+type AuctionRealtimeEvent = {
+  campaignId: number;
+};
+
+type InventoryRealtimeEvent = {
+  campaignId: number;
+};
 
 const DEFAULT_CREATED_BY = 1;
 
@@ -160,29 +185,56 @@ export function OrganizerCampaignsScreen() {
     setIsLoading(true);
     setLoadError(null);
 
-    try {
-      const [eventsResponse, campaignsResponse, usersResponse, itemsResponse] = await Promise.all([
-        getEvents(),
-        getCampaigns(),
-        getUsers(1, 200),
-        getItemDonations(1, 500),
-      ]);
+    const [eventsResult, campaignsResult, usersResult, itemsResult] = await Promise.allSettled([
+      getEvents(),
+      getCampaigns(),
+      getUsers(1, 200),
+      getItemDonations(1, 500),
+    ]);
 
-      const nextCampaigns = campaignsResponse.data;
-      const nextUsers = usersResponse.data;
+    const failedSources: string[] = [];
 
-      setEvents(eventsResponse.data);
-      setCampaigns(nextCampaigns);
-      setUsers(nextUsers);
-      setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResponse));
-      setSelectedEventId(eventsResponse.data[0]?.id ?? null);
-
-      await refreshCampaignAuctions(nextCampaigns.map((campaign) => campaign.id));
-    } catch {
-      setLoadError('No fue posible cargar eventos y campanas. Verifica el backend.');
-    } finally {
-      setIsLoading(false);
+    if (eventsResult.status === 'fulfilled') {
+      setEvents(eventsResult.value.data);
+      setSelectedEventId(eventsResult.value.data[0]?.id ?? null);
+    } else {
+      failedSources.push(`eventos (${getErrorMessage(eventsResult.reason)})`);
+      setEvents([]);
+      setSelectedEventId(null);
     }
+
+    if (campaignsResult.status === 'fulfilled') {
+      setCampaigns(campaignsResult.value.data);
+    } else {
+      failedSources.push(`campanas (${getErrorMessage(campaignsResult.reason)})`);
+      setCampaigns([]);
+    }
+
+    if (usersResult.status === 'fulfilled') {
+      setUsers(usersResult.value.data);
+    } else {
+      failedSources.push(`usuarios (${getErrorMessage(usersResult.reason)})`);
+      setUsers([]);
+    }
+
+    if (itemsResult.status === 'fulfilled') {
+      setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResult.value));
+    } else {
+      failedSources.push(`inventario (${getErrorMessage(itemsResult.reason)})`);
+      setItemDonations([]);
+    }
+
+    if (campaignsResult.status === 'fulfilled') {
+      await refreshCampaignAuctions(campaignsResult.value.data.map((campaign) => campaign.id));
+    } else {
+      setAuctionsByCampaign({});
+    }
+
+    if (failedSources.length > 0) {
+      setLoadError(`Fallo la carga de: ${failedSources.join(' | ')}`);
+    }
+
+    setIsLoading(false);
   }, [refreshCampaignAuctions]);
 
   useEffect(() => {
@@ -225,6 +277,126 @@ export function OrganizerCampaignsScreen() {
   );
 
   const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
+    connectRealtime({
+      userId: organizerBuyerId,
+      role: currentUser.role,
+    });
+
+    const campaignIds = campaigns.map((campaign) => campaign.id);
+    const rooms = campaignIds.flatMap((campaignId) => [
+      `campaign:${campaignId}:chat`,
+      `campaign:${campaignId}:auctions`,
+      `campaign:${campaignId}:inventory`,
+    ]);
+
+    rooms.forEach((room) => joinRealtimeRoom(room));
+
+    const offChatMessageCreated = onChatMessageCreated<ChatMessageCreatedEvent>((event) => {
+      if (!event?.campaignId || !event.message) {
+        return;
+      }
+
+      setChatByCampaign((prev) => {
+        const bucket = prev[event.campaignId] ?? [];
+        const nextId = String(event.id ?? `ws-${Date.now()}`);
+
+        if (bucket.some((item) => item.id === nextId)) {
+          return prev;
+        }
+
+        const normalizedIncomingMessage = event.message.trim().toLowerCase();
+        const optimisticIndex = bucket.findIndex((item) => {
+          const isOptimistic = String(item.id).startsWith('local-');
+          if (!isOptimistic) {
+            return false;
+          }
+
+          return item.message.trim().toLowerCase() === normalizedIncomingMessage;
+        });
+
+        if (optimisticIndex >= 0) {
+          const nextBucket = [...bucket];
+          nextBucket[optimisticIndex] = {
+            id: nextId,
+            author: event.authorName ?? `Usuario ${event.authorId ?? ''}`.trim(),
+            message: event.message,
+            createdAt: event.createdAt
+              ? new Date(event.createdAt).toLocaleTimeString('es-CO', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : nextBucket[optimisticIndex].createdAt,
+          };
+
+          return {
+            ...prev,
+            [event.campaignId]: nextBucket,
+          };
+        }
+
+        return {
+          ...prev,
+          [event.campaignId]: [
+            ...bucket,
+            {
+              id: nextId,
+              author: event.authorName ?? `Usuario ${event.authorId ?? ''}`.trim(),
+              message: event.message,
+              createdAt: event.createdAt
+                ? new Date(event.createdAt).toLocaleTimeString('es-CO', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : new Date().toLocaleTimeString('es-CO', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+            },
+          ],
+        };
+      });
+    });
+
+    const handleAuctionRealtime = (event: AuctionRealtimeEvent) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      refreshCampaignAuctions([event.campaignId]);
+    };
+
+    const offAuctionCreated = onRealtime<AuctionRealtimeEvent>('auction.created', handleAuctionRealtime);
+    const offAuctionUpdated = onRealtime<AuctionRealtimeEvent>('auction.updated', handleAuctionRealtime);
+    const offAuctionSold = onRealtime<AuctionRealtimeEvent>('auction.sold', handleAuctionRealtime);
+
+    const offInventoryUpdated = onRealtime<InventoryRealtimeEvent>('campaign.inventory.updated', async (event) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      try {
+        const itemsResponse = await getItemDonations(1, 500);
+        setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResponse));
+      } catch {
+        // Keep last snapshot if refresh fails.
+      }
+    });
+
+    return () => {
+      offChatMessageCreated();
+      offAuctionCreated();
+      offAuctionUpdated();
+      offAuctionSold();
+      offInventoryUpdated();
+      rooms.forEach((room) => leaveRealtimeRoom(room));
+    };
+  }, [campaigns, currentUser, organizerBuyerId, refreshCampaignAuctions]);
 
   const canCreate = campaignName.trim().length >= 3 && Boolean(selectedEventId) && !isSubmitting;
 
@@ -314,10 +486,12 @@ export function OrganizerCampaignsScreen() {
       return;
     }
 
-    const newMessage: ChatMessage = {
-      id: `msg-${Date.now()}`,
-      author: 'Usuario',
-      message: chatDraft.trim(),
+    const trimmedMessage = chatDraft.trim();
+
+    const optimisticMessage: ChatMessage = {
+      id: `local-${Date.now()}`,
+      author: currentUser?.label ?? 'Organizador',
+      message: trimmedMessage,
       createdAt: new Date().toLocaleTimeString('es-CO', {
         hour: '2-digit',
         minute: '2-digit',
@@ -326,8 +500,14 @@ export function OrganizerCampaignsScreen() {
 
     setChatByCampaign((prev) => ({
       ...prev,
-      [chatCampaignId]: [...(prev[chatCampaignId] ?? []), newMessage],
+      [chatCampaignId]: [...(prev[chatCampaignId] ?? []), optimisticMessage],
     }));
+
+    emitChatSend({
+      campaignId: Number(chatCampaignId),
+      message: trimmedMessage,
+    });
+
     setChatDraft('');
   };
 
