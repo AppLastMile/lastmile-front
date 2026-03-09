@@ -1,5 +1,5 @@
 import { FontAwesome5 } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,13 +14,13 @@ import {
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
+import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
-import {
-  type Campaign,
-  createCampaign,
-  getCampaigns,
-} from '@/services/api/campaignsService';
+import { type Auction, buyAuction, getCampaignAuctions } from '@/services/api/auctionsService';
+import { type Campaign, createCampaign, getCampaigns } from '@/services/api/campaignsService';
+import { getItemDonations, type ItemDonationResponse } from '@/services/api/donationsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import { getUsers, type UserSummary } from '@/services/api/usersService';
 
 type ChatMessage = {
   id: string;
@@ -29,7 +29,49 @@ type ChatMessage = {
   createdAt: string;
 };
 
+type AuctionMap = Record<number, Auction[]>;
+type ItemInventoryByCampaign = Record<number, Record<string, number>>;
+
 const DEFAULT_CREATED_BY = 1;
+
+const PHYSICAL_DONATION_OPTIONS = [
+  { key: 'cama', label: 'Camas' },
+  { key: 'colchon', label: 'Colchones' },
+  { key: 'cobija', label: 'Cobijas' },
+  { key: 'kit_higiene', label: 'Kits de higiene' },
+  { key: 'alimento', label: 'Alimentos' },
+] as const;
+
+function normalizeCollection<T>(response: unknown): T[] {
+  if (Array.isArray(response)) {
+    return response as T[];
+  }
+
+  if (
+    typeof response === 'object' &&
+    response !== null &&
+    'data' in response &&
+    Array.isArray((response as { data?: unknown }).data)
+  ) {
+    return (response as { data: T[] }).data;
+  }
+
+  return [];
+}
+
+function buildInventoryMap(itemDonations: ItemDonationResponse[]): ItemInventoryByCampaign {
+  return itemDonations.reduce<ItemInventoryByCampaign>((acc, donation) => {
+    const campaignBucket = acc[donation.campaignId] ?? {};
+    const itemKey = donation.itemType;
+
+    acc[donation.campaignId] = {
+      ...campaignBucket,
+      [itemKey]: (campaignBucket[itemKey] ?? 0) + donation.quantity,
+    };
+
+    return acc;
+  }, {});
+}
 
 function getErrorMessage(error: unknown) {
   if (!(error instanceof Error)) {
@@ -37,7 +79,6 @@ function getErrorMessage(error: unknown) {
   }
 
   const rawMessage = error.message?.trim();
-
   if (!rawMessage) {
     return 'Error desconocido.';
   }
@@ -68,12 +109,22 @@ function formatMoney(value: number) {
 }
 
 export function OrganizerCampaignsScreen() {
+  const { currentUser } = useAuthSession();
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
+  const [itemDonations, setItemDonations] = useState<ItemDonationResponse[]>([]);
+  const [auctionsByCampaign, setAuctionsByCampaign] = useState<AuctionMap>({});
+
+  const [organizerBuyerId, setOrganizerBuyerId] = useState<number>(DEFAULT_CREATED_BY);
+
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [auctionFeedbackByCampaign, setAuctionFeedbackByCampaign] = useState<Record<number, string>>({});
+  const [isBuyingAuctionById, setIsBuyingAuctionById] = useState<Record<number, boolean>>({});
 
   const [campaignName, setCampaignName] = useState('');
   const [campaignDescription, setCampaignDescription] = useState('');
@@ -85,47 +136,88 @@ export function OrganizerCampaignsScreen() {
   const [chatDraft, setChatDraft] = useState('');
   const [chatByCampaign, setChatByCampaign] = useState<Record<number, ChatMessage[]>>({});
 
+  const refreshCampaignAuctions = useCallback(async (campaignIds: number[]) => {
+    const entries = await Promise.all(
+      campaignIds.map(async (campaignId) => {
+        try {
+          const response = await getCampaignAuctions(campaignId, 'all');
+          return [campaignId, normalizeCollection<Auction>(response)] as const;
+        } catch {
+          return [campaignId, [] as Auction[]] as const;
+        }
+      })
+    );
+
+    const nextMap: AuctionMap = {};
+    entries.forEach(([campaignId, auctions]) => {
+      nextMap[campaignId] = auctions;
+    });
+
+    setAuctionsByCampaign(nextMap);
+  }, []);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+
+    try {
+      const [eventsResponse, campaignsResponse, usersResponse, itemsResponse] = await Promise.all([
+        getEvents(),
+        getCampaigns(),
+        getUsers(1, 200),
+        getItemDonations(1, 500),
+      ]);
+
+      const nextCampaigns = campaignsResponse.data;
+      const nextUsers = usersResponse.data;
+
+      setEvents(eventsResponse.data);
+      setCampaigns(nextCampaigns);
+      setUsers(nextUsers);
+      setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResponse));
+      setSelectedEventId(eventsResponse.data[0]?.id ?? null);
+
+      await refreshCampaignAuctions(nextCampaigns.map((campaign) => campaign.id));
+    } catch {
+      setLoadError('No fue posible cargar eventos y campanas. Verifica el backend.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [refreshCampaignAuctions]);
+
   useEffect(() => {
-    let isMounted = true;
+    loadData();
+  }, [loadData]);
 
-    async function loadData() {
-      setIsLoading(true);
-      setLoadError(null);
-
-      try {
-        const [eventsResponse, campaignsResponse] = await Promise.all([getEvents(), getCampaigns()]);
-
-        if (!isMounted) {
-          return;
-        }
-
-        setEvents(eventsResponse.data);
-        setCampaigns(campaignsResponse.data);
-        setSelectedEventId(eventsResponse.data[0]?.id ?? null);
-      } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-
-        setLoadError('No fue posible cargar eventos y campanas. Verifica el backend.');
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
+  useEffect(() => {
+    if (!currentUser) {
+      return;
     }
 
-    loadData();
+    const matchedByEmail = users.find(
+      (userItem) => userItem.email.toLowerCase() === currentUser.email.toLowerCase()
+    );
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    if (matchedByEmail) {
+      setOrganizerBuyerId(matchedByEmail.id);
+      return;
+    }
+
+    const fallbackOrganizer = users.find((userItem) => userItem.role === 'organizer');
+    setOrganizerBuyerId(fallbackOrganizer?.id ?? DEFAULT_CREATED_BY);
+  }, [currentUser, users]);
 
   const eventsById = useMemo(
     () => new Map(events.map((eventItem) => [eventItem.id, eventItem])),
     [events]
   );
+
+  const usersById = useMemo(
+    () => new Map(users.map((userItem) => [userItem.id, userItem])),
+    [users]
+  );
+
+  const inventoryByCampaign = useMemo(() => buildInventoryMap(itemDonations), [itemDonations]);
 
   const chatCampaign = useMemo(
     () => campaigns.find((campaignItem) => campaignItem.id === chatCampaignId) ?? null,
@@ -133,6 +225,7 @@ export function OrganizerCampaignsScreen() {
   );
 
   const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
+
   const canCreate = campaignName.trim().length >= 3 && Boolean(selectedEventId) && !isSubmitting;
 
   const handleOpenCreate = () => {
@@ -179,6 +272,37 @@ export function OrganizerCampaignsScreen() {
     }
   };
 
+  const handleBuyAuction = async (campaignId: number, auctionId: number, auctionPrice: number) => {
+    setIsBuyingAuctionById((prev) => ({ ...prev, [auctionId]: true }));
+
+    try {
+      await buyAuction(auctionId, {
+        buyerId: organizerBuyerId,
+        idempotencyKey: `${auctionId}-${organizerBuyerId}-${Date.now()}`,
+      });
+
+      setCampaigns((prev) =>
+        prev.map((campaignItem) =>
+          campaignItem.id === campaignId
+            ? { ...campaignItem, collectedMoney: campaignItem.collectedMoney + auctionPrice }
+            : campaignItem
+        )
+      );
+
+      await refreshCampaignAuctions([campaignId]);
+      setAuctionFeedbackByCampaign((prev) => ({
+        ...prev,
+        [campaignId]: 'Compra de subasta registrada correctamente.',
+      }));
+    } catch (error) {
+      setAuctionFeedbackByCampaign((prev) => ({
+        ...prev,
+        [campaignId]: `No se pudo completar la compra. ${getErrorMessage(error)}`,
+      }));
+    } finally {
+      setIsBuyingAuctionById((prev) => ({ ...prev, [auctionId]: false }));
+    }
+  };
 
   const openChat = (campaignId: number) => {
     setChatCampaignId(campaignId);
@@ -222,7 +346,7 @@ export function OrganizerCampaignsScreen() {
           }}
         >
           <Text className='text-center text-base font-extrabold tracking-[0.3px] text-white'>
-            Crear campaña
+            Crear campana
           </Text>
         </Pressable>
 
@@ -251,6 +375,14 @@ export function OrganizerCampaignsScreen() {
               campaignItem.goalMoney > 0
                 ? Math.min(100, Math.round((campaignItem.collectedMoney / campaignItem.goalMoney) * 100))
                 : 0;
+
+            const inventory = inventoryByCampaign[campaignItem.id] ?? {};
+            const physicalInventorySummary = PHYSICAL_DONATION_OPTIONS.map((option) => ({
+              label: option.label,
+              quantity: inventory[option.key] ?? 0,
+            })).filter((entry) => entry.quantity > 0);
+
+            const campaignAuctions = auctionsByCampaign[campaignItem.id] ?? [];
 
             return (
               <Animated.View
@@ -290,28 +422,81 @@ export function OrganizerCampaignsScreen() {
                 </View>
 
                 <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
-                  <View
-                    className='h-full rounded-full bg-[#1f5fe0]'
-                    style={{ width: `${Math.max(6, progress)}%` }}
-                  />
+                  <View className='h-full rounded-full bg-[#1f5fe0]' style={{ width: `${Math.max(6, progress)}%` }} />
                 </View>
+
+                <View className='mt-3 rounded-xl bg-[#edf3ff] p-3'>
+                  <Text className='text-xs font-semibold text-[#27436d]'>Elementos donados</Text>
+                  {physicalInventorySummary.length === 0 ? (
+                    <Text className='mt-1 text-xs text-[#5d7399]'>Aun no hay elementos donados.</Text>
+                  ) : (
+                    <Text className='mt-1 text-xs text-[#1f365d]'>
+                      {physicalInventorySummary.map((entry) => `${entry.label}: ${entry.quantity}`).join(' | ')}
+                    </Text>
+                  )}
+                </View>
+
+                <View className='mt-3 rounded-xl bg-[#fff9ef] p-3'>
+                  <Text className='text-xs font-semibold text-[#8a5d13]'>Subastas de la campana</Text>
+                  {campaignAuctions.length === 0 ? (
+                    <Text className='mt-1 text-xs text-[#9f7a3e]'>Aun no hay subastas registradas.</Text>
+                  ) : (
+                    <View className='mt-2 gap-2'>
+                      {campaignAuctions.map((auction) => {
+                        const seller = usersById.get(auction.sellerId);
+                        const buyer = auction.buyerId ? usersById.get(auction.buyerId) : null;
+
+                        return (
+                          <View className='rounded-xl border border-[#f0d7b0] bg-white px-3 py-3' key={auction.id}>
+                            <Text className='text-sm font-bold text-[#6b4912]'>{auction.itemName}</Text>
+                            <Text className='mt-1 text-xs text-[#8d6a34]'>
+                              {auction.description || 'Sin descripcion'}
+                            </Text>
+                            <Text className='mt-1 text-xs text-[#8d6a34]'>
+                              Publicado por: {seller?.name ?? seller?.fullName ?? `Usuario ${auction.sellerId}`}
+                            </Text>
+                            <Text className='mt-1 text-sm font-extrabold text-[#b56e11]'>
+                              {formatMoney(auction.price)}
+                            </Text>
+
+                            {auction.status === 'active' ? (
+                              <Pressable
+                                className='mt-2 self-start rounded-xl bg-[#d18b25] px-3 py-2'
+                                onPress={() => handleBuyAuction(campaignItem.id, auction.id, auction.price)}
+                              >
+                                <Text className='text-xs font-bold text-white'>
+                                  {isBuyingAuctionById[auction.id] ? 'Comprando...' : 'Comprar'}
+                                </Text>
+                              </Pressable>
+                            ) : (
+                              <Text className='mt-2 text-xs font-semibold text-[#1b7b45]'>
+                                Vendida a: {buyer?.name ?? buyer?.fullName ?? `Usuario ${auction.buyerId ?? '-'}`}
+                              </Text>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+
+                {auctionFeedbackByCampaign[campaignItem.id] ? (
+                  <Text className='mt-2 text-xs text-[#8d6a34]'>
+                    {auctionFeedbackByCampaign[campaignItem.id]}
+                  </Text>
+                ) : null}
               </Animated.View>
             );
           })}
 
           {!isLoading && campaigns.length === 0 ? (
-            <Text className='text-sm text-[#5d7498]'>
-              Aun no hay campanas creadas.
-            </Text>
+            <Text className='text-sm text-[#5d7498]'>Aun no hay campanas creadas.</Text>
           ) : null}
         </ScrollView>
       </View>
 
       <Modal animationType='slide' transparent visible={isCreateOpen}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          className='flex-1'
-        >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className='flex-1'>
           <View className='flex-1 justify-end bg-[#07163166]'>
             <View className='max-h-[88%] rounded-t-3xl bg-white px-5 pt-5'>
               <ScrollView
@@ -319,84 +504,90 @@ export function OrganizerCampaignsScreen() {
                 keyboardShouldPersistTaps='handled'
                 showsVerticalScrollIndicator={false}
               >
-                <Text className='text-lg font-extrabold text-[#17315c]'>Crear campaña</Text>
+                <Text className='text-lg font-extrabold text-[#17315c]'>Crear campana</Text>
 
-            <Text className='mt-4 text-sm font-semibold text-[#27436d]'>Nombre</Text>
-            <TextInput
-              className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
-              onChangeText={setCampaignName}
-              placeholder='Ej: Kits de ayuda para inundaciones'
-              placeholderTextColor='#8ea6c8'
-              value={campaignName}
-            />
+                <Text className='mt-4 text-sm font-semibold text-[#27436d]'>Nombre</Text>
+                <TextInput
+                  className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
+                  onChangeText={setCampaignName}
+                  placeholder='Ej: Kits de ayuda para inundaciones'
+                  placeholderTextColor='#8ea6c8'
+                  value={campaignName}
+                />
 
-            <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Descripcion</Text>
-            <TextInput
-              className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
-              onChangeText={setCampaignDescription}
-              placeholder='Describe el objetivo de la campana'
-              placeholderTextColor='#8ea6c8'
-              value={campaignDescription}
-            />
+                <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Descripcion</Text>
+                <TextInput
+                  className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
+                  onChangeText={setCampaignDescription}
+                  placeholder='Describe el objetivo de la campana'
+                  placeholderTextColor='#8ea6c8'
+                  value={campaignDescription}
+                />
 
-            <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Meta de fondos (COP)</Text>
-            <TextInput
-              className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
-              keyboardType='number-pad'
-              onChangeText={setGoalMoney}
-              placeholder='0'
-              placeholderTextColor='#8ea6c8'
-              value={goalMoney}
-            />
+                <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Meta de fondos (COP)</Text>
+                <TextInput
+                  className='mt-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-4 py-3 text-[#18335f]'
+                  keyboardType='number-pad'
+                  onChangeText={setGoalMoney}
+                  placeholder='0'
+                  placeholderTextColor='#8ea6c8'
+                  value={goalMoney}
+                />
 
-            <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Evento asociado</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className='mt-2'>
-              <View className='flex-row gap-2'>
-                {events.map((eventItem) => {
-                  const isSelected = selectedEventId === eventItem.id;
-                  return (
-                    <Pressable
-                      className={`rounded-full border px-4 py-2 ${
-                        isSelected ? 'border-[#1f5fe0] bg-[#e8f0ff]' : 'border-[#d6e3fb] bg-white'
-                      }`}
-                      key={eventItem.id}
-                      onPress={() => setSelectedEventId(eventItem.id)}
-                    >
-                      <Text
-                        className={`text-xs font-semibold ${isSelected ? 'text-[#1f4fb6]' : 'text-[#4a6083]'}`}
-                      >
-                        {eventItem.name} - {eventItem.city}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
+                <Text className='mt-3 text-sm font-semibold text-[#27436d]'>Evento asociado</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className='mt-2'>
+                  <View className='flex-row gap-2'>
+                    {events.map((eventItem) => {
+                      const isSelected = selectedEventId === eventItem.id;
 
-            {events.length === 0 ? (
-              <Text className='mt-3 rounded-xl bg-[#fff6e8] px-3 py-2 text-xs text-[#8a5d13]'>
-                No hay eventos creados. Sin evento no se puede crear la campana.
-              </Text>
-            ) : null}
+                      return (
+                        <Pressable
+                          className={`rounded-full border px-4 py-2 ${
+                            isSelected ? 'border-[#1f5fe0] bg-[#e8f0ff]' : 'border-[#d6e3fb] bg-white'
+                          }`}
+                          key={eventItem.id}
+                          onPress={() => setSelectedEventId(eventItem.id)}
+                        >
+                          <Text
+                            className={`text-xs font-semibold ${
+                              isSelected ? 'text-[#1f4fb6]' : 'text-[#4a6083]'
+                            }`}
+                          >
+                            {eventItem.name} - {eventItem.city}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
 
-            {formError ? (
-              <Text className='mt-3 rounded-xl bg-[#ffecef] px-3 py-2 text-xs text-[#9f2238]'>
-                {formError}
-              </Text>
-            ) : null}
+                {events.length === 0 ? (
+                  <Text className='mt-3 rounded-xl bg-[#fff6e8] px-3 py-2 text-xs text-[#8a5d13]'>
+                    No hay eventos creados. Sin evento no se puede crear la campana.
+                  </Text>
+                ) : null}
 
-            <View className='mt-5 flex-row items-center justify-between'>
-              <Pressable className='rounded-xl border border-[#d3def3] px-4 py-3' onPress={() => setIsCreateOpen(false)}>
-                <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                className={`rounded-xl px-5 py-3 ${canCreate ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'}`}
-                disabled={!canCreate}
-                onPress={handleSubmitCampaign}
-              >
-                <Text className='font-semibold text-white'>Guardar campaña</Text>
-              </Pressable>
-            </View>
+                {formError ? (
+                  <Text className='mt-3 rounded-xl bg-[#ffecef] px-3 py-2 text-xs text-[#9f2238]'>
+                    {formError}
+                  </Text>
+                ) : null}
+
+                <View className='mt-5 flex-row items-center justify-between'>
+                  <Pressable
+                    className='rounded-xl border border-[#d3def3] px-4 py-3'
+                    onPress={() => setIsCreateOpen(false)}
+                  >
+                    <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
+                  </Pressable>
+                  <Pressable
+                    className={`rounded-xl px-5 py-3 ${canCreate ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'}`}
+                    disabled={!canCreate}
+                    onPress={handleSubmitCampaign}
+                  >
+                    <Text className='font-semibold text-white'>Guardar campana</Text>
+                  </Pressable>
+                </View>
               </ScrollView>
             </View>
           </View>
@@ -406,7 +597,10 @@ export function OrganizerCampaignsScreen() {
       <Modal animationType='slide' visible={Boolean(chatCampaignId)}>
         <SafeAreaView className='flex-1 bg-[#f4f8ff]'>
           <View className='flex-row items-center px-4 py-3'>
-            <Pressable className='h-10 w-10 items-center justify-center rounded-full bg-white' onPress={() => setChatCampaignId(null)}>
+            <Pressable
+              className='h-10 w-10 items-center justify-center rounded-full bg-white'
+              onPress={() => setChatCampaignId(null)}
+            >
               <FontAwesome5 color='#1f4fb6' name='times' size={16} />
             </Pressable>
             <Text className='ml-3 flex-1 text-base font-extrabold text-[#19335b]'>
