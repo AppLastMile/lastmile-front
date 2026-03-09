@@ -12,8 +12,7 @@ type RealtimeHandler<T = unknown> = (payload: T) => void;
 
 let socket: Socket | null = null;
 let connectErrors = 0;
-
-const MAX_CONNECT_ERRORS = 3;
+const joinedRooms = new Set<string>();
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const DEFAULT_WS_NAMESPACE = '/ws';
@@ -209,6 +208,17 @@ function logRealtimeDebug(message: string, payload?: unknown) {
   console.log(`[realtime] ${message}`, payload ?? '');
 }
 
+function syncJoinedRooms() {
+  if (!socket?.connected || joinedRooms.size === 0) {
+    return;
+  }
+
+  joinedRooms.forEach((room) => {
+    socket?.emit('system.join_room', { room });
+    logRealtimeDebug('rejoin room', room);
+  });
+}
+
 export function connectRealtime(auth: RealtimeAuth = {}) {
   if (socket?.connected) {
     return socket;
@@ -242,9 +252,10 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
     autoConnect: true,
     timeout: 8000,
     reconnection: true,
-    reconnectionAttempts: MAX_CONNECT_ERRORS,
+    reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
+    reconnectionDelayMax: 10000,
+    randomizationFactor: 0.5,
     transports,
     tryAllTransports: true,
     path,
@@ -259,6 +270,7 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
 
   socket.on('connect', () => {
     connectErrors = 0;
+    syncJoinedRooms();
     logRealtimeDebug('connected', {
       id: socket?.id,
       baseUrl,
@@ -271,15 +283,18 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
   socket.on('connect_error', (error: unknown) => {
     connectErrors += 1;
     logRealtimeDebug('connect_error', error);
-
-    if (connectErrors >= MAX_CONNECT_ERRORS) {
-      logRealtimeDebug('connect_error: max retries reached, stopping socket reconnection loop');
-      socket?.disconnect();
-    }
   });
 
   socket.on('disconnect', (reason: unknown) => {
     logRealtimeDebug('disconnected', reason);
+  });
+
+  socket.io.on('reconnect_attempt', (attempt) => {
+    logRealtimeDebug('reconnect_attempt', attempt);
+  });
+
+  socket.io.on('reconnect', (attempt) => {
+    logRealtimeDebug('reconnect', attempt);
   });
 
   return socket;
@@ -293,6 +308,7 @@ export function disconnectRealtime() {
   socket.disconnect();
   socket = null;
   connectErrors = 0;
+  joinedRooms.clear();
 }
 
 export function isRealtimeConnected() {
@@ -300,11 +316,13 @@ export function isRealtimeConnected() {
 }
 
 export function joinRealtimeRoom(room: string) {
+  joinedRooms.add(room);
   socket?.emit('system.join_room', { room });
   logRealtimeDebug('join room', room);
 }
 
 export function leaveRealtimeRoom(room: string) {
+  joinedRooms.delete(room);
   socket?.emit('system.leave_room', { room });
   logRealtimeDebug('leave room', room);
 }

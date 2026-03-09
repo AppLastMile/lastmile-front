@@ -1,4 +1,5 @@
 import { MaterialIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,6 +20,8 @@ import {
 } from '@/modules/missions/constants/colombianCities';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 import { createEvent, type EventSummary, getEvents } from '@/services/api/eventsService';
+import { getPickupPoints, type PickupPoint } from '@/services/api/logisticsService';
+import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
 
 const DEFAULT_CREATED_BY = 1;
 const DEFAULT_DISASTER_TYPE = 'desastre_natural';
@@ -34,6 +37,7 @@ export function CreateMissionScreen() {
   const [selectedCity, setSelectedCity] = useState<ColombianCity | null>(null);
 
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -54,33 +58,74 @@ export function CreateMissionScreen() {
       events
         .map((eventItem) => {
           const city = findColombianCityByName(eventItem.city);
-          if (!city) {
-            return null;
-          }
+          const fallbackCity = city ?? COLOMBIAN_CITIES[0];
 
-          return { event: eventItem, city };
+          return { event: eventItem, city: fallbackCity };
         })
         .filter((eventItem): eventItem is { event: EventSummary; city: ColombianCity } => Boolean(eventItem)),
     [events]
   );
 
-  const loadEvents = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setIsLoadingEvents(true);
     setLoadError(null);
 
-    try {
-      const response = await getEvents({ page: 1, limit: 100 });
-      setEvents(response.data);
-    } catch {
-      setLoadError('No fue posible cargar eventos desde backend.');
-    } finally {
-      setIsLoadingEvents(false);
+    const rememberedPickupPoints = getRememberedPickupPoints();
+
+    const eventsPromise = getEvents({ page: 1, limit: 100 });
+    const pickupPointsPromise = getPickupPoints().catch(async () => {
+      return getPickupPoints(1, 100);
+    });
+
+    const [eventsResult, pickupPointsResult] = await Promise.allSettled([
+      eventsPromise,
+      pickupPointsPromise,
+    ]);
+
+    const failedSources: string[] = [];
+
+    if (eventsResult.status === 'fulfilled') {
+      setEvents(eventsResult.value.data);
+    } else {
+      setEvents([]);
+      failedSources.push('eventos');
     }
+
+    if (pickupPointsResult.status === 'fulfilled') {
+      const mergedById = new Map<number, PickupPoint>();
+
+      rememberedPickupPoints.forEach((item) => {
+        mergedById.set(item.id, item);
+      });
+
+      pickupPointsResult.value.data.forEach((item) => {
+        mergedById.set(item.id, item);
+      });
+
+      const mergedPickupPoints = Array.from(mergedById.values()).sort((a, b) => b.id - a.id);
+      setPickupPoints(mergedPickupPoints);
+      rememberPickupPoints(mergedPickupPoints);
+    } else {
+      setPickupPoints(rememberedPickupPoints);
+      failedSources.push('puntos de recogida');
+    }
+
+    if (failedSources.length > 0) {
+      setLoadError(`No fue posible cargar: ${failedSources.join(' | ')}.`);
+    }
+
+    setIsLoadingEvents(false);
   }, []);
 
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    loadData();
+  }, [loadData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const handleCreateEvent = async () => {
     if (!selectedCity) {
@@ -132,8 +177,8 @@ export function CreateMissionScreen() {
             <MaterialIcons color='#fff' name='warning' size={22} />
           </Pressable>
 
-          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2' onPress={loadEvents}>
-            <Text className='font-semibold text-white'>Recargar eventos</Text>
+          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2' onPress={loadData}>
+            <Text className='font-semibold text-white'>Recargar inicio</Text>
           </Pressable>
         </View>
 
@@ -249,6 +294,24 @@ export function CreateMissionScreen() {
       ) : null}
 
       <ScrollView className='mt-4 px-4' contentContainerStyle={{ gap: 10, paddingBottom: 120 }}>
+        <View className='rounded-2xl border border-[#d8e6ff] bg-white p-4'>
+          <Text className='text-base font-extrabold text-[#1b3259]'>Puntos de recogida</Text>
+          {pickupPoints.length === 0 ? (
+            <Text className='mt-2 text-sm text-[#5d7498]'>Aun no hay puntos de recogida.</Text>
+          ) : (
+            <View className='mt-3 gap-2'>
+              {pickupPoints.map((pickupPoint) => (
+                <View className='rounded-xl border border-[#e1ebff] bg-[#f8fbff] px-3 py-3' key={pickupPoint.id}>
+                  <Text className='text-sm font-bold text-[#173761]'>{pickupPoint.name}</Text>
+                  <Text className='mt-1 text-xs text-[#496385]'>
+                    {pickupPoint.city} · {pickupPoint.address}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
         {mappedEvents.map(({ event, city }) => (
           <View className='rounded-2xl border border-[#d8e6ff] bg-white p-4' key={event.id}>
             <Text className='text-base font-extrabold text-[#1b3259]'>{event.name}</Text>

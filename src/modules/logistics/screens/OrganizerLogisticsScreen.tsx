@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+
 import {
   COLOMBIAN_CITIES,
   type ColombianCity,
@@ -19,8 +20,11 @@ import { type EventSummary, getEvents } from '@/services/api/eventsService';
 import {
   createPickupPoint,
   getPickupPoints,
+  getShipments,
   type PickupPoint,
+  type Shipment,
 } from '@/services/api/logisticsService';
+import { rememberPickupPoint, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
 import { getUsers, type UserSummary } from '@/services/api/usersService';
 
 function getErrorMessage(error: unknown) {
@@ -51,12 +55,28 @@ function getErrorMessage(error: unknown) {
   }
 }
 
+function getShipmentStatusLabel(status: Shipment['status']) {
+  switch (status) {
+    case 'pending':
+      return 'Pendiente';
+    case 'assigned':
+      return 'Asignado';
+    case 'in_transit':
+      return 'En transito';
+    case 'delivered':
+      return 'Entregado';
+    default:
+      return status;
+  }
+}
+
 export function OrganizerLogisticsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
   const [volunteers, setVolunteers] = useState<UserSummary[]>([]);
 
   const [isCreatePickupOpen, setIsCreatePickupOpen] = useState(false);
@@ -73,6 +93,11 @@ export function OrganizerLogisticsScreen() {
     [events]
   );
 
+  const volunteersById = useMemo(
+    () => new Map(volunteers.map((userItem) => [userItem.id, userItem])),
+    [volunteers]
+  );
+
   const canCreatePickup =
     pickupName.trim().length >= 3 &&
     pickupAddress.trim().length >= 5 &&
@@ -85,14 +110,17 @@ export function OrganizerLogisticsScreen() {
     setLoadError(null);
 
     try {
-      const [eventsResponse, pickupPointsResponse, usersResponse] = await Promise.all([
+      const [eventsResponse, pickupPointsResponse, usersResponse, shipmentsResponse] = await Promise.all([
         getEvents(),
         getPickupPoints(),
         getUsers(),
+        getShipments(),
       ]);
 
       setEvents(eventsResponse.data);
       setPickupPoints(pickupPointsResponse.data);
+      rememberPickupPoints(pickupPointsResponse.data);
+      setShipments(shipmentsResponse.data);
       setVolunteers(usersResponse.data.filter((user) => user.role === 'volunteer'));
       setSelectedEventId((current) => current ?? eventsResponse.data[0]?.id ?? null);
     } catch (error) {
@@ -128,6 +156,7 @@ export function OrganizerLogisticsScreen() {
       });
 
       setPickupPoints((prev) => [createdPickupPoint, ...prev]);
+      rememberPickupPoint(createdPickupPoint);
       setPickupName('');
       setPickupAddress('');
       setSelectedCity(null);
@@ -152,7 +181,7 @@ export function OrganizerLogisticsScreen() {
         {isLoading ? (
           <View className='mt-3 flex-row items-center'>
             <ActivityIndicator color='#1f5fe0' size='small' />
-            <Text className='ml-2 text-sm text-[#50698e]'>Cargando puntos de recogida...</Text>
+            <Text className='ml-2 text-sm text-[#50698e]'>Cargando logistica...</Text>
           </View>
         ) : null}
 
@@ -296,6 +325,33 @@ export function OrganizerLogisticsScreen() {
         </View>
 
         <View className='mt-4 rounded-2xl border border-[#dce8ff] bg-white p-4'>
+          <Text className='text-base font-bold text-[#19335f]'>Envios registrados</Text>
+          {shipments.length === 0 ? (
+            <Text className='mt-2 text-sm text-[#5d7498]'>No hay envios registrados.</Text>
+          ) : (
+            <View className='mt-3 gap-2'>
+              {shipments.map((shipment) => {
+                const volunteer = shipment.assignedVolunteerId
+                  ? volunteersById.get(shipment.assignedVolunteerId)
+                  : null;
+
+                return (
+                  <View className='rounded-xl border border-[#e1ebff] bg-[#f8fbff] px-3 py-3' key={shipment.id}>
+                    <Text className='text-sm font-bold text-[#173761]'>Envio #{shipment.id}</Text>
+                    <Text className='mt-1 text-xs text-[#496385]'>
+                      Estado: {getShipmentStatusLabel(shipment.status)}
+                    </Text>
+                    <Text className='mt-1 text-xs text-[#496385]'>
+                      Voluntario: {volunteer ? volunteer.fullName ?? volunteer.name ?? volunteer.email : 'Sin asignar'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        <View className='mt-4 rounded-2xl border border-[#dce8ff] bg-white p-4'>
           <Text className='text-base font-bold text-[#19335f]'>Voluntarios disponibles</Text>
 
           {volunteers.length === 0 ? (
@@ -321,7 +377,6 @@ export function OrganizerLogisticsScreen() {
             </View>
           )}
         </View>
-
       </ScrollView>
 
       <OrganizerBottomTabs activeTab='logistica' />
