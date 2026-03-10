@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import * as Location from 'expo-location';
 import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
 import MapView, { Marker, UrlTile, type Region } from 'react-native-maps';
 
@@ -25,9 +26,13 @@ type EventWithCity = {
 export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
+  const [mapRef, setMapRef] = useState<MapView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -63,6 +68,80 @@ export function MapScreen() {
     loadEvents();
   }, [loadEvents]);
 
+  useEffect(() => {
+    let isMounted = true;
+    let watch: Location.LocationSubscription | null = null;
+
+    async function startLocationTracking() {
+      setIsLocating(true);
+      setLocationError(null);
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          if (isMounted) {
+            setLocationError('Permiso de ubicacion denegado.');
+            setIsLocating(false);
+          }
+          return;
+        }
+
+        const current = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        if (isMounted) {
+          setMyLocation({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+          setIsLocating(false);
+        }
+
+        watch = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 3000,
+            distanceInterval: 8,
+          },
+          (position) => {
+            if (!isMounted) {
+              return;
+            }
+
+            setMyLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+          }
+        );
+      } catch {
+        if (isMounted) {
+          setLocationError('No fue posible obtener tu ubicacion.');
+          setIsLocating(false);
+        }
+      }
+    }
+
+    startLocationTracking();
+
+    return () => {
+      isMounted = false;
+      watch?.remove();
+    };
+  }, []);
+
+  const centerOnMyLocation = () => {
+    if (!myLocation || !mapRef) {
+      return;
+    }
+
+    mapRef.animateToRegion(
+      {
+        latitude: myLocation.latitude,
+        longitude: myLocation.longitude,
+        latitudeDelta: 0.04,
+        longitudeDelta: 0.04,
+      },
+      700
+    );
+  };
+
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       {!isDonor ? (
@@ -90,7 +169,7 @@ export function MapScreen() {
           isDonor ? 'border-0' : 'rounded-t-3xl border border-[#d3e2ff]'
         }`}
       >
-        <MapView initialRegion={COLOMBIA_REGION} style={{ flex: 1 }}>
+        <MapView initialRegion={COLOMBIA_REGION} ref={setMapRef} style={{ flex: 1 }}>
           <UrlTile
             maximumZ={19}
             urlTemplate='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -108,6 +187,16 @@ export function MapScreen() {
               title={event.name}
             />
           ))}
+
+          {myLocation ? (
+            <Marker
+              coordinate={myLocation}
+              description='Ubicacion actual del dispositivo'
+              key='my-location'
+              pinColor='#2563eb'
+              title='Tu ubicacion'
+            />
+          ) : null}
         </MapView>
 
         {isLoading ? (
@@ -121,6 +210,29 @@ export function MapScreen() {
         {error ? (
           <View className='absolute left-3 right-3 top-3 rounded-xl bg-[#ffecef] px-3 py-2'>
             <Text className='text-sm text-[#a1263d]'>{error}</Text>
+          </View>
+        ) : null}
+
+        {locationError ? (
+          <View className='absolute left-3 right-3 top-16 rounded-xl bg-[#fff4e6] px-3 py-2'>
+            <Text className='text-sm text-[#9a6400]'>{locationError}</Text>
+          </View>
+        ) : null}
+
+        <View className='absolute right-3 top-16'>
+          <Pressable
+            className='rounded-xl bg-[#1f5fe0] px-3 py-2'
+            disabled={!myLocation}
+            onPress={centerOnMyLocation}
+            style={{ opacity: myLocation ? 1 : 0.65 }}
+          >
+            <Text className='text-xs font-semibold text-white'>Mi ubicacion</Text>
+          </Pressable>
+        </View>
+
+        {isLocating ? (
+          <View className='absolute right-3 top-28 rounded-xl bg-white px-3 py-2'>
+            <Text className='text-xs text-[#4d648a]'>Obteniendo ubicacion...</Text>
           </View>
         ) : null}
       </View>

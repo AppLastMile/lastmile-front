@@ -1,6 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -12,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import 'leaflet/dist/leaflet.css';
 
 import {
   COLOMBIAN_CITIES,
@@ -25,6 +27,7 @@ import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/stat
 
 const DEFAULT_CREATED_BY = 1;
 const DEFAULT_DISASTER_TYPE = 'desastre_natural';
+const COLOMBIA_CENTER: [number, number] = [4.5709, -74.2973];
 
 export function CreateMissionScreen() {
   const [isEventMenuOpen, setIsEventMenuOpen] = useState(false);
@@ -65,6 +68,54 @@ export function CreateMissionScreen() {
         .filter((eventItem): eventItem is { event: EventSummary; city: ColombianCity } => Boolean(eventItem)),
     [events]
   );
+
+  const mappedPickupPoints = useMemo(
+    () =>
+      pickupPoints
+        .map((pickupPoint) => {
+          if (typeof pickupPoint.latitude === 'number' && typeof pickupPoint.longitude === 'number') {
+            return {
+              pickupPoint,
+              latitude: pickupPoint.latitude,
+              longitude: pickupPoint.longitude,
+            };
+          }
+
+          const city = findColombianCityByName(pickupPoint.city);
+
+          if (!city) {
+            return null;
+          }
+
+          return {
+            pickupPoint,
+            latitude: city.region.latitude,
+            longitude: city.region.longitude,
+          };
+        })
+        .filter(
+          (
+            item
+          ): item is {
+            pickupPoint: PickupPoint;
+            latitude: number;
+            longitude: number;
+          } => Boolean(item)
+        ),
+    [pickupPoints]
+  );
+
+  const mapCenter = useMemo<[number, number]>(() => {
+    if (mappedEvents.length > 0) {
+      return [mappedEvents[0].city.region.latitude, mappedEvents[0].city.region.longitude];
+    }
+
+    if (mappedPickupPoints.length > 0) {
+      return [mappedPickupPoints[0].latitude, mappedPickupPoints[0].longitude];
+    }
+
+    return COLOMBIA_CENTER;
+  }, [mappedEvents, mappedPickupPoints]);
 
   const loadData = useCallback(async () => {
     setIsLoadingEvents(true);
@@ -166,7 +217,7 @@ export function CreateMissionScreen() {
       <View className='px-4 pb-3 pt-3'>
         <Text className='text-2xl font-extrabold text-[#16325d]'>Gestion de eventos</Text>
         <Text className='mt-1 text-sm text-[#4d648a]'>
-          Vista web simplificada para crear y listar eventos sin mapa nativo.
+          Mapa OpenStreetMap para crear y monitorear eventos y puntos de recogida.
         </Text>
 
         <View className='mt-4 flex-row items-center gap-2'>
@@ -205,6 +256,49 @@ export function CreateMissionScreen() {
             <Text className='text-xs text-[#9f2238]'>{loadError}</Text>
           </View>
         ) : null}
+      </View>
+
+      <View className='mx-4 flex-1 overflow-hidden rounded-2xl border border-[#d3e2ff] bg-white'>
+        <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors'
+            url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+          />
+
+          {mappedEvents.map(({ event, city }) => (
+            <CircleMarker
+              center={[city.region.latitude, city.region.longitude]}
+              key={`event-${event.id}`}
+              pathOptions={{ color: '#e03b3b', fillColor: '#ff6b6b', fillOpacity: 0.9 }}
+              radius={9}
+            >
+              <Popup>
+                <strong>{event.name}</strong>
+                <br />
+                {event.description || 'Sin descripcion'}
+                <br />
+                {event.city}
+              </Popup>
+            </CircleMarker>
+          ))}
+
+          {mappedPickupPoints.map(({ pickupPoint, latitude, longitude }) => (
+            <CircleMarker
+              center={[latitude, longitude]}
+              key={`pickup-${pickupPoint.id}`}
+              pathOptions={{ color: '#1f5fe0', fillColor: '#2a7fff', fillOpacity: 0.92 }}
+              radius={8}
+            >
+              <Popup>
+                <strong>Punto de recogida: {pickupPoint.name}</strong>
+                <br />
+                {pickupPoint.address}
+                <br />
+                {pickupPoint.city}
+              </Popup>
+            </CircleMarker>
+          ))}
+        </MapContainer>
       </View>
 
       {isCreateEventOpen ? (
@@ -286,48 +380,6 @@ export function CreateMissionScreen() {
           </View>
         </KeyboardAvoidingView>
       ) : null}
-
-      {isLoadingEvents ? (
-        <View className='mt-5 items-center'>
-          <ActivityIndicator color='#1f5fe0' size='small' />
-        </View>
-      ) : null}
-
-      <ScrollView className='mt-4 px-4' contentContainerStyle={{ gap: 10, paddingBottom: 120 }}>
-        <View className='rounded-2xl border border-[#d8e6ff] bg-white p-4'>
-          <Text className='text-base font-extrabold text-[#1b3259]'>Puntos de recogida</Text>
-          {pickupPoints.length === 0 ? (
-            <Text className='mt-2 text-sm text-[#5d7498]'>Aun no hay puntos de recogida.</Text>
-          ) : (
-            <View className='mt-3 gap-2'>
-              {pickupPoints.map((pickupPoint) => (
-                <View className='rounded-xl border border-[#e1ebff] bg-[#f8fbff] px-3 py-3' key={pickupPoint.id}>
-                  <Text className='text-sm font-bold text-[#173761]'>{pickupPoint.name}</Text>
-                  <Text className='mt-1 text-xs text-[#496385]'>
-                    {pickupPoint.city} · {pickupPoint.address}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {mappedEvents.map(({ event, city }) => (
-          <View className='rounded-2xl border border-[#d8e6ff] bg-white p-4' key={event.id}>
-            <Text className='text-base font-extrabold text-[#1b3259]'>{event.name}</Text>
-            <Text className='mt-1 text-xs text-[#5d7399]'>
-              {city.name} ({city.region.latitude.toFixed(4)}, {city.region.longitude.toFixed(4)})
-            </Text>
-            <Text className='mt-2 text-sm text-[#4d648a]'>
-              {event.description || 'Sin descripcion'}
-            </Text>
-          </View>
-        ))}
-
-        {!isLoadingEvents && mappedEvents.length === 0 ? (
-          <Text className='text-sm text-[#5d7498]'>Aun no hay eventos registrados.</Text>
-        ) : null}
-      </ScrollView>
 
       <OrganizerBottomTabs activeTab='inicio' />
     </SafeAreaView>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
+import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 
 import {
   findColombianCityByName,
@@ -14,12 +16,15 @@ type EventWithCity = {
   city: ColombianCity;
 };
 
+const COLOMBIA_CENTER: [number, number] = [4.5709, -74.2973];
+
 export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -37,6 +42,21 @@ export function MapScreen() {
     [events]
   );
 
+  const mapCenter = useMemo<[number, number]>(() => {
+    if (myLocation) {
+      return myLocation;
+    }
+
+    if (mappedEvents.length > 0) {
+      return [
+        mappedEvents[0].city.region.latitude,
+        mappedEvents[0].city.region.longitude,
+      ];
+    }
+
+    return COLOMBIA_CENTER;
+  }, [mappedEvents, myLocation]);
+
   const loadEvents = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -45,7 +65,7 @@ export function MapScreen() {
       const response = await getEvents({ page: 1, limit: 100 });
       setEvents(response.data);
     } catch {
-      setError('No fue posible cargar eventos para la vista web. Verifica el backend.');
+      setError('No fue posible cargar eventos para el mapa web.');
     } finally {
       setIsLoading(false);
     }
@@ -55,17 +75,41 @@ export function MapScreen() {
     loadEvents();
   }, [loadEvents]);
 
+  useEffect(() => {
+    if (!navigator?.geolocation) {
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setMyLocation([position.coords.latitude, position.coords.longitude]);
+      },
+      () => {
+        // Keep map usable without location permission.
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 5000,
+      }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       <View className='px-4 pb-3 pt-3'>
         <Text className='text-2xl font-extrabold text-[#16325d]'>Mapa de eventos</Text>
         <Text className='mt-1 text-sm text-[#4d648a]'>
-          Vista web simplificada. Los marcadores nativos se muestran en Expo Go.
+          OpenStreetMap en web con marcadores en tiempo real de los eventos.
         </Text>
 
         {!isDonor ? (
           <View className='mt-3 flex-row items-center justify-between'>
-            <Text className='text-sm font-semibold text-[#2a456e]'>Ciudades mapeadas: {mappedEvents.length}</Text>
+            <Text className='text-sm font-semibold text-[#2a456e]'>Marcadores: {mappedEvents.length}</Text>
             <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadEvents}>
               <Text className='font-semibold text-white'>Recargar</Text>
             </Pressable>
@@ -73,46 +117,56 @@ export function MapScreen() {
         ) : null}
       </View>
 
-      {isLoading ? (
-        <View className='mt-6 items-center'>
-          <ActivityIndicator color='#1f5fe0' size='small' />
-        </View>
-      ) : null}
+      <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
+        <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors'
+            url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+          />
 
-      {error ? (
-        <View className='mx-4 mt-3 rounded-xl bg-[#ffecef] px-3 py-2'>
-          <Text className='text-sm text-[#a1263d]'>{error}</Text>
-        </View>
-      ) : null}
-
-      <ScrollView className='mt-3 px-4' contentContainerStyle={{ gap: 10, paddingBottom: 110 }}>
-        {mappedEvents.map(({ event, city }) => {
-          const mapUrl = `https://www.openstreetmap.org/?mlat=${city.region.latitude}&mlon=${city.region.longitude}#map=12/${city.region.latitude}/${city.region.longitude}`;
-
-          return (
-            <View className='rounded-2xl border border-[#d3e2ff] bg-white p-4' key={event.id}>
-              <Text className='text-base font-extrabold text-[#1b3259]'>{event.name}</Text>
-              <Text className='mt-1 text-sm text-[#4d648a]'>
-                {city.name} ({city.region.latitude.toFixed(4)}, {city.region.longitude.toFixed(4)})
-              </Text>
-              <Text className='mt-2 text-sm text-[#4d648a]' numberOfLines={3}>
+          {mappedEvents.map(({ event, city }) => (
+            <CircleMarker
+              center={[city.region.latitude, city.region.longitude]}
+              key={event.id}
+              pathOptions={{ color: '#e03b3b', fillColor: '#ff6b6b', fillOpacity: 0.9 }}
+              radius={9}
+            >
+              <Popup>
+                <strong>{event.name}</strong>
+                <br />
                 {event.description || 'Sin descripcion'}
-              </Text>
+                <br />
+                {event.city}
+              </Popup>
+            </CircleMarker>
+          ))}
 
-              <Pressable
-                className='mt-3 self-start rounded-xl bg-[#1f5fe0] px-3 py-2'
-                onPress={() => Linking.openURL(mapUrl)}
-              >
-                <Text className='text-xs font-semibold text-white'>Abrir en OpenStreetMap</Text>
-              </Pressable>
+          {myLocation ? (
+            <CircleMarker
+              center={myLocation}
+              key='my-location'
+              pathOptions={{ color: '#1f5fe0', fillColor: '#2a7fff', fillOpacity: 0.95 }}
+              radius={8}
+            >
+              <Popup>Tu ubicacion actual</Popup>
+            </CircleMarker>
+          ) : null}
+        </MapContainer>
+
+        {isLoading ? (
+          <View className='absolute left-0 right-0 top-3 items-center'>
+            <View className='rounded-full bg-white px-4 py-2'>
+              <ActivityIndicator color='#1f5fe0' size='small' />
             </View>
-          );
-        })}
-
-        {!isLoading && mappedEvents.length === 0 ? (
-          <Text className='text-sm text-[#5d7498]'>No hay eventos con coordenadas disponibles.</Text>
+          </View>
         ) : null}
-      </ScrollView>
+
+        {error ? (
+          <View className='absolute left-3 right-3 top-3 rounded-xl bg-[#ffecef] px-3 py-2'>
+            <Text className='text-sm text-[#a1263d]'>{error}</Text>
+          </View>
+        ) : null}
+      </View>
 
       {isDonor ? <DonorBottomTabs activeTab='inicio' /> : null}
     </SafeAreaView>
