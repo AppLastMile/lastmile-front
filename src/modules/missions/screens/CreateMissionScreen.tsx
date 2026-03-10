@@ -1,5 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Location from 'expo-location';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -27,6 +29,8 @@ import {
   type EventSummary,
   getEvents,
 } from '@/services/api/eventsService';
+import { getPickupPoints, type PickupPoint } from '@/services/api/logisticsService';
+import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
 
 const COLOMBIA_REGION: Region = {
   latitude: 4.5709,
@@ -44,6 +48,7 @@ const DEFAULT_DISASTER_TYPE = 'desastre_natural';
 
 export function CreateMissionScreen() {
   const mapRef = useRef<MapView | null>(null);
+  const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const tabsBottomOffset = Math.max(insets.bottom - 6, 6);
@@ -51,6 +56,7 @@ export function CreateMissionScreen() {
     FORM_MIN_HEIGHT,
     windowHeight - (tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS + FORM_VERTICAL_MARGIN)
   );
+
   const [isEventMenuOpen, setIsEventMenuOpen] = useState(false);
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
@@ -61,10 +67,14 @@ export function CreateMissionScreen() {
   const [createdEventLabel, setCreatedEventLabel] = useState('');
   const [formContentHeight, setFormContentHeight] = useState(FORM_MIN_HEIGHT);
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLocating, setIsLocating] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const canCreateEvent = useMemo(
     () =>
@@ -81,36 +91,218 @@ export function CreateMissionScreen() {
         .map((eventItem) => {
           const city = findColombianCityByName(eventItem.city);
 
-          if (!city) {
-            return null;
-          }
+          const fallbackCity = city ?? COLOMBIAN_CITIES[0];
 
-          return { event: eventItem, city };
+          return { event: eventItem, city: fallbackCity };
         })
         .filter((eventItem): eventItem is { event: EventSummary; city: ColombianCity } => Boolean(eventItem)),
     [events]
   );
 
+  const eventsById = useMemo(
+    () => new Map(events.map((eventItem) => [eventItem.id, eventItem])),
+    [events]
+  );
+
+  const mappedPickupPoints = useMemo(
+    () =>
+      pickupPoints
+        .map((pickupPoint) => {
+          if (typeof pickupPoint.latitude === 'number' && typeof pickupPoint.longitude === 'number') {
+            return {
+              pickupPoint,
+              latitude: pickupPoint.latitude,
+              longitude: pickupPoint.longitude,
+            };
+          }
+
+          const city = findColombianCityByName(pickupPoint.city);
+
+          if (city) {
+            return {
+              pickupPoint,
+              latitude: city.region.latitude,
+              longitude: city.region.longitude,
+            };
+          }
+
+          const relatedEvent =
+            typeof pickupPoint.eventId === 'number' ? eventsById.get(pickupPoint.eventId) : undefined;
+
+          const relatedEventCity = relatedEvent
+            ? findColombianCityByName(relatedEvent.city)
+            : null;
+
+          if (relatedEventCity) {
+            return {
+              pickupPoint,
+              latitude: relatedEventCity.region.latitude,
+              longitude: relatedEventCity.region.longitude,
+            };
+          }
+
+          return {
+            pickupPoint,
+            latitude: COLOMBIAN_CITIES[0].region.latitude,
+            longitude: COLOMBIAN_CITIES[0].region.longitude,
+          };
+        })
+        .filter(
+          (
+            pickupItem
+          ): pickupItem is {
+            pickupPoint: PickupPoint;
+            latitude: number;
+            longitude: number;
+          } => Boolean(pickupItem)
+        ),
+    [eventsById, pickupPoints]
+  );
+
   const panelHeight = Math.min(Math.max(formContentHeight + 16, FORM_MIN_HEIGHT), maxFormHeight);
   const shouldEnableScroll = formContentHeight + 16 > maxFormHeight;
 
-  const loadEvents = useCallback(async () => {
+  const loadMapData = useCallback(async () => {
     setIsLoadingEvents(true);
     setLoadError(null);
 
-    try {
-      const response = await getEvents({ page: 1, limit: 100 });
-      setEvents(response.data);
-    } catch {
-      setLoadError('No fue posible cargar eventos desde backend.');
-    } finally {
-      setIsLoadingEvents(false);
+    const rememberedPickupPoints = getRememberedPickupPoints();
+
+    const eventsPromise = getEvents({ page: 1, limit: 100 });
+    const pickupPointsPromise = getPickupPoints().catch(async () => {
+      // Retry once with explicit default pagination to handle transient backend validation/network issues.
+      return getPickupPoints(1, 100);
+    });
+
+    const [eventsResult, pickupPointsResult] = await Promise.allSettled([
+      eventsPromise,
+      pickupPointsPromise,
+    ]);
+
+    const failedSources: string[] = [];
+
+    if (eventsResult.status === 'fulfilled') {
+      setEvents(eventsResult.value.data);
+    } else {
+      setEvents([]);
+      failedSources.push('eventos');
     }
+
+    if (pickupPointsResult.status === 'fulfilled') {
+      const mergedById = new Map<number, PickupPoint>();
+
+      rememberedPickupPoints.forEach((item) => {
+        mergedById.set(item.id, item);
+      });
+
+      pickupPointsResult.value.data.forEach((item) => {
+        mergedById.set(item.id, item);
+      });
+
+      const mergedPickupPoints = Array.from(mergedById.values()).sort((a, b) => b.id - a.id);
+      setPickupPoints(mergedPickupPoints);
+      rememberPickupPoints(mergedPickupPoints);
+    } else {
+      setPickupPoints(rememberedPickupPoints);
+      failedSources.push('puntos de recogida');
+    }
+
+    if (failedSources.length > 0) {
+      setLoadError(`No fue posible cargar: ${failedSources.join(' | ')}.`);
+    }
+
+    setIsLoadingEvents(false);
   }, []);
 
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    loadMapData();
+  }, [loadMapData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadMapData();
+    }, [loadMapData])
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function startLocationTracking() {
+      setIsLocating(true);
+      setLocationError(null);
+
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          if (isMounted) {
+            setLocationError('Permiso de ubicacion denegado.');
+            setIsLocating(false);
+          }
+          return;
+        }
+
+        const current = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        if (isMounted) {
+          setMyLocation({
+            latitude: current.coords.latitude,
+            longitude: current.coords.longitude,
+          });
+          setIsLocating(false);
+        }
+
+        locationWatchRef.current = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 3000,
+            distanceInterval: 8,
+          },
+          (position) => {
+            if (!isMounted) {
+              return;
+            }
+
+            setMyLocation({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+          }
+        );
+      } catch {
+        if (isMounted) {
+          setLocationError('No fue posible obtener tu ubicacion.');
+          setIsLocating(false);
+        }
+      }
+    }
+
+    startLocationTracking();
+
+    return () => {
+      isMounted = false;
+      locationWatchRef.current?.remove();
+      locationWatchRef.current = null;
+    };
+  }, []);
+
+  const centerOnMyLocation = () => {
+    if (!myLocation) {
+      return;
+    }
+
+    mapRef.current?.animateToRegion(
+      {
+        latitude: myLocation.latitude,
+        longitude: myLocation.longitude,
+        latitudeDelta: 0.04,
+        longitudeDelta: 0.04,
+      },
+      700
+    );
+  };
 
   const handleSelectCity = (city: ColombianCity) => {
     setSelectedCity(city);
@@ -161,6 +353,7 @@ export function CreateMissionScreen() {
           urlTemplate='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
           zIndex={-1}
         />
+
         {mappedEvents.map(({ event, city }) => (
           <Marker
             coordinate={{
@@ -168,8 +361,18 @@ export function CreateMissionScreen() {
               longitude: city.region.longitude,
             }}
             description={event.description}
-            key={event.id}
+            key={`event-${event.id}`}
             title={event.name}
+          />
+        ))}
+
+        {mappedPickupPoints.map(({ pickupPoint, latitude, longitude }) => (
+          <Marker
+            coordinate={{ latitude, longitude }}
+            description={pickupPoint.address}
+            key={`pickup-${pickupPoint.id}`}
+            pinColor='#0a84ff'
+            title={`Punto de recogida: ${pickupPoint.name}`}
           />
         ))}
 
@@ -183,6 +386,16 @@ export function CreateMissionScreen() {
             title={selectedCity.name}
           />
         ) : null}
+
+        {myLocation ? (
+          <Marker
+            coordinate={myLocation}
+            description='Ubicacion actual del dispositivo'
+            key='my-location'
+            pinColor='#2563eb'
+            title='Tu ubicacion'
+          />
+        ) : null}
       </MapView>
 
       {isLoadingEvents ? (
@@ -194,6 +407,29 @@ export function CreateMissionScreen() {
       {loadError ? (
         <View className='absolute right-4 top-24 rounded-xl bg-[#ffecef] px-3 py-2'>
           <Text className='text-xs text-[#9f2238]'>{loadError}</Text>
+        </View>
+      ) : null}
+
+      {locationError ? (
+        <View className='absolute left-20 right-4 top-24 rounded-xl bg-[#fff4e6] px-3 py-2'>
+          <Text className='text-xs text-[#9a6400]'>{locationError}</Text>
+        </View>
+      ) : null}
+
+      <View className='absolute right-4 top-40'>
+        <Pressable
+          className='rounded-xl bg-[#1f5fe0] px-3 py-2'
+          disabled={!myLocation}
+          onPress={centerOnMyLocation}
+          style={{ opacity: myLocation ? 1 : 0.65 }}
+        >
+          <Text className='text-xs font-semibold text-white'>Mi ubicacion</Text>
+        </Pressable>
+      </View>
+
+      {isLocating ? (
+        <View className='absolute right-4 top-52 rounded-xl bg-white px-3 py-2'>
+          <Text className='text-xs text-[#4d648a]'>Obteniendo ubicacion...</Text>
         </View>
       ) : null}
 
@@ -235,10 +471,10 @@ export function CreateMissionScreen() {
             </Pressable>
             <Pressable
               className='mt-2 flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
-              onPress={loadEvents}
+              onPress={loadMapData}
             >
               <MaterialIcons color='#2f68d8' name='refresh' size={20} />
-              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Recargar eventos</Text>
+              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Recargar mapa</Text>
             </Pressable>
           </Animated.View>
         ) : null}
