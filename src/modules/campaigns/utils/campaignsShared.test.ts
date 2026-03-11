@@ -47,6 +47,11 @@ describe('campaignsShared utilities', () => {
     });
 
     it('should handle deeply nested paginated responses', () => {
+      type NestedCollectionItem = {
+        id: number;
+        nested: { value: string };
+      };
+
       const response = {
         data: [
           { id: 1, nested: { value: 'a' } },
@@ -55,7 +60,7 @@ describe('campaignsShared utilities', () => {
         meta: { page: 1 },
         extra: { info: 'extra' },
       };
-      const result = normalizeCollection(response);
+      const result = normalizeCollection<NestedCollectionItem>(response);
       expect(result).toHaveLength(2);
       expect(result[0].nested.value).toBe('a');
     });
