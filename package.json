@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "doctor": "expo-doctor"
+    "doctor": "expo-doctor",
+    "sonar": "sonar-scanner"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@tamagui/babel-plugin": "^2.0.0-rc.22",
     "@types/react": "~19.1.10",
+    "sonarqube-scanner": "^4.3.4",
     "typescript": "~5.9.2"
   },
   "private": true
