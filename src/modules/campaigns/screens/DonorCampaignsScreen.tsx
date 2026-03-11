@@ -603,7 +603,7 @@ export function DonorCampaignsScreen() {
 
     const optimisticMessage: ChatMessage = {
       id: `local-${Date.now()}`,
-      author: currentUser?.label ?? 'Donante',
+      author: currentUser?.email ?? 'Donante',
       message: trimmedMessage,
       createdAt: new Date().toLocaleTimeString('es-CO', {
         hour: '2-digit',

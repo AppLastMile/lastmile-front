@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "@tamagui/babel-plugin": "^2.0.0-rc.22",
+    "@types/leaflet": "^1.9.21",
     "@types/react": "~19.1.10",
     "sonarqube-scanner": "^4.3.4",
     "typescript": "~5.9.2"

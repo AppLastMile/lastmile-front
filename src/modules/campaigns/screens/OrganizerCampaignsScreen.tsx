@@ -490,7 +490,7 @@ export function OrganizerCampaignsScreen() {
 
     const optimisticMessage: ChatMessage = {
       id: `local-${Date.now()}`,
-      author: currentUser?.label ?? 'Organizador',
+      author: currentUser?.email ?? 'Organizador',
       message: trimmedMessage,
       createdAt: new Date().toLocaleTimeString('es-CO', {
         hour: '2-digit',
