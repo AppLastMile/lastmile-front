@@ -1,4 +1,4 @@
-import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -14,58 +14,36 @@ import Animated, {
   FadeInDown,
   FadeInUp,
   Layout,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 
-import {
-  MOCK_USERS,
-  type MockUser,
-} from '@/modules/auth/constants/mockUsers';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+function getLoginErrorMessage(error: unknown) {
+  if (!(error instanceof Error) || !error.message) {
+    return 'No fue posible iniciar sesion. Intenta nuevamente.';
+  }
 
-function RoleCard({
-  user,
-  onPress,
-}: {
-  user: MockUser;
-  onPress: (user: MockUser) => void;
-}) {
-  const scale = useSharedValue(1);
+  try {
+    const parsed = JSON.parse(error.message) as {
+      message?: string | string[];
+    };
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+    if (Array.isArray(parsed.message) && parsed.message.length > 0) {
+      return parsed.message[0] ?? 'Credenciales invalidas.';
+    }
 
-  return (
-    <AnimatedPressable
-      className='mb-3 rounded-2xl border border-[#dce8ff] bg-white/95 p-4'
-      entering={FadeInUp.duration(500)}
-      layout={Layout.springify()}
-      onPress={() => onPress(user)}
-      onPressIn={() => {
-        scale.value = withTiming(0.97, { duration: 120 });
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, { damping: 12, stiffness: 180 });
-      }}
-      style={animatedStyle}
-    >
-      <View className='flex-row items-center justify-between'>
-        <View className='flex-1'>
-          <Text className='text-lg font-semibold text-[#14243f]'>{user.label}</Text>
-          <Text className='mt-1 text-sm text-[#567]'>
-            {user.email} / {user.password}
-          </Text>
-        </View>
-        <MaterialCommunityIcons color='#2867f0' name='arrow-top-right' size={20} />
-      </View>
-    </AnimatedPressable>
-  );
+    if (typeof parsed.message === 'string') {
+      return parsed.message;
+    }
+  } catch {
+    // If backend did not return JSON text, fallback to known messages below.
+  }
+
+  if (error.message.includes('Network request failed')) {
+    return 'No fue posible conectar con el backend. Verifica URL y red.';
+  }
+
+  return error.message;
 }
 
 export function LoginScreen() {
@@ -81,29 +59,18 @@ export function LoginScreen() {
     [email, isSubmitting, password]
   );
 
-  const handleMockPrefill = (user: MockUser) => {
-    setEmail(user.email);
-    setPassword(user.password);
-    setError('');
-  };
-
   const handleLogin = async () => {
-    const matched = login(email, password);
-
-    if (!matched) {
-      setError(
-        'Credenciales invalidas. Usa una de las cuentas sugeridas (organizador, donante o voluntario).'
-      );
-      return;
-    }
-
     setIsSubmitting(true);
     setError('');
 
-    setTimeout(() => {
+    try {
+      const matched = await login(email, password);
       router.replace(matched.redirectTo as never);
+    } catch (loginError) {
+      setError(getLoginErrorMessage(loginError));
+    } finally {
       setIsSubmitting(false);
-    }, 350);
+    }
   };
 
   useEffect(() => {
@@ -183,15 +150,6 @@ export function LoginScreen() {
               {isSubmitting ? 'Ingresando...' : 'Entrar'}
             </Text>
           </Pressable>
-        </Animated.View>
-
-        <Animated.View className='mt-5' entering={FadeInDown.delay(180).duration(550)}>
-          <Text className='mb-3 text-sm font-semibold uppercase tracking-wide text-[#4f6487]'>
-            Accesos Rapidos
-          </Text>
-          {MOCK_USERS.map((user) => (
-            <RoleCard key={user.role} onPress={handleMockPrefill} user={user} />
-          ))}
         </Animated.View>
       </KeyboardAvoidingView>
     </SafeAreaView>
