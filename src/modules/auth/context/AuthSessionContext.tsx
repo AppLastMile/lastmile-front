@@ -1,33 +1,60 @@
 import type { PropsWithChildren } from 'react';
 import { createContext, useContext, useMemo, useState } from 'react';
 
-import {
-  type MockUser,
-  validateMockCredentials,
-} from '@/modules/auth/constants/mockUsers';
+import type { UserRole } from '@/constants/roles';
+import { authService } from '@/services/auth/authService';
+
+export type AuthSessionUser = {
+  id: number;
+  email: string;
+  role: UserRole;
+  accessToken: string;
+  redirectTo: string;
+};
+
+function getRedirectByRole(role: UserRole) {
+  if (role === 'organizer') {
+    return '/organizer/create-mission';
+  }
+
+  if (role === 'donor') {
+    return '/(tabs)/map';
+  }
+
+  return '/(tabs)/home';
+}
 
 type AuthSessionContextValue = {
-  currentUser: MockUser | null;
-  login: (email: string, password: string) => MockUser | null;
+  currentUser: AuthSessionUser | null;
+  login: (email: string, password: string) => Promise<AuthSessionUser>;
   logout: () => void;
 };
 
 const AuthSessionContext = createContext<AuthSessionContextValue | null>(null);
 
 export function AuthSessionProvider({ children }: PropsWithChildren) {
-  const [currentUser, setCurrentUser] = useState<MockUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthSessionUser | null>(null);
 
   const value = useMemo<AuthSessionContextValue>(
     () => ({
       currentUser,
-      login(email: string, password: string) {
-        const matched = validateMockCredentials(email, password);
+      async login(email: string, password: string) {
+        const session = await authService.login({
+          email: email.trim().toLowerCase(),
+          password,
+        });
 
-        if (matched) {
-          setCurrentUser(matched);
-        }
+        const authenticatedUser: AuthSessionUser = {
+          id: session.user.id,
+          email: session.user.email,
+          role: session.user.role,
+          accessToken: session.accessToken,
+          redirectTo: getRedirectByRole(session.user.role),
+        };
 
-        return matched ?? null;
+        setCurrentUser(authenticatedUser);
+
+        return authenticatedUser;
       },
       logout() {
         setCurrentUser(null);

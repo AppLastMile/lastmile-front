@@ -4,6 +4,22 @@ import { Pressable, Text, View } from 'react-native';
 import { AppScreen } from '@/components/ui/AppScreen';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 
+function getRoleLabel(role?: string) {
+  if (role === 'organizer') {
+    return 'Organizador';
+  }
+
+  if (role === 'donor') {
+    return 'Donante';
+  }
+
+  if (role === 'volunteer') {
+    return 'Voluntario';
+  }
+
+  return 'Sin sesion';
+}
+
 export function ProfileScreen() {
   const router = useRouter();
   const { currentUser, logout } = useAuthSession();
@@ -18,7 +34,7 @@ export function ProfileScreen() {
       <View className='rounded-2xl border border-brand-100 bg-white p-5'>
         <Text className='text-2xl font-bold text-brand-700'>Perfil</Text>
         <Text className='mt-2 text-base text-slate-700'>
-          Sesion activa: {currentUser?.label ?? 'Sin sesion'}
+          Sesion activa: {getRoleLabel(currentUser?.role)}
         </Text>
         <Text className='mt-1 text-sm text-slate-500'>
           {currentUser?.email ?? 'No hay usuario autenticado'}
