@@ -1,19 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatModal';
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
 import { type Auction, buyAuction, createAuction, getCampaignAuctions } from '@/services/api/auctionsService';
 import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
@@ -25,6 +15,19 @@ import {
 } from '@/services/api/donationsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 import {
+  AuctionMap,
+  AuctionRealtimeEvent,
+  buildInventoryMap,
+  ChatMessage,
+  ChatMessageCreatedEvent,
+  formatMoney,
+  getErrorMessage,
+  InventoryRealtimeEvent,
+  normalizeCollection,
+  PHYSICAL_DONATION_OPTIONS,
+} from '@/modules/campaigns/utils/campaignsShared';
+
+import {
   connectRealtime,
   emitChatSend,
   joinRealtimeRoom,
@@ -34,99 +37,7 @@ import {
 } from '@/services/realtime/realtimeService';
 import { getUsers, type UserSummary } from '@/services/api/usersService';
 
-type ChatMessage = {
-  id: string;
-  author: string;
-  message: string;
-  createdAt: string;
-};
-
-type PhysicalDonationOption = {
-  key: string;
-  label: string;
-};
-
-type ItemInventoryByCampaign = Record<number, Record<string, number>>;
-type AuctionMap = Record<number, Auction[]>;
-
-type ChatMessageCreatedEvent = {
-  id: number | string;
-  campaignId: number;
-  authorId?: number;
-  authorName?: string;
-  message: string;
-  createdAt?: string;
-};
-
-type AuctionRealtimeEvent = {
-  campaignId: number;
-};
-
-type InventoryRealtimeEvent = {
-  campaignId: number;
-};
-
 const DEFAULT_DONOR_ID = 1;
-
-const PHYSICAL_DONATION_OPTIONS: PhysicalDonationOption[] = [
-  { key: 'cama', label: 'Camas' },
-  { key: 'colchon', label: 'Colchones' },
-  { key: 'cobija', label: 'Cobijas' },
-  { key: 'kit_higiene', label: 'Kits de higiene' },
-  { key: 'alimento', label: 'Alimentos' },
-];
-
-function normalizeCollection<T>(response: unknown): T[] {
-  if (Array.isArray(response)) {
-    return response as T[];
-  }
-
-  if (
-    typeof response === 'object' &&
-    response !== null &&
-    'data' in response &&
-    Array.isArray((response as { data?: unknown }).data)
-  ) {
-    return (response as { data: T[] }).data;
-  }
-
-  return [];
-}
-
-function getErrorMessage(error: unknown) {
-  if (!(error instanceof Error)) {
-    return 'Error desconocido.';
-  }
-
-  const rawMessage = error.message?.trim();
-  if (!rawMessage) {
-    return 'Error desconocido.';
-  }
-
-  try {
-    const parsed = JSON.parse(rawMessage) as { message?: string | string[] };
-
-    if (Array.isArray(parsed.message)) {
-      return parsed.message.join(' | ');
-    }
-
-    if (typeof parsed.message === 'string') {
-      return parsed.message;
-    }
-
-    return rawMessage;
-  } catch {
-    return rawMessage;
-  }
-}
-
-function formatMoney(value: number) {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function getProgressValue(campaign: Campaign) {
   if (!campaign.goalMoney || campaign.goalMoney <= 0) {
@@ -134,20 +45,6 @@ function getProgressValue(campaign: Campaign) {
   }
 
   return Math.min(100, Math.round((campaign.collectedMoney / campaign.goalMoney) * 100));
-}
-
-function buildInventoryMap(itemDonations: ItemDonationResponse[]): ItemInventoryByCampaign {
-  return itemDonations.reduce<ItemInventoryByCampaign>((acc, donation) => {
-    const campaignBucket = acc[donation.campaignId] ?? {};
-    const itemKey = donation.itemType;
-
-    acc[donation.campaignId] = {
-      ...campaignBucket,
-      [itemKey]: (campaignBucket[itemKey] ?? 0) + donation.quantity,
-    };
-
-    return acc;
-  }, {});
 }
 
 export function DonorCampaignsScreen() {
@@ -263,7 +160,7 @@ export function DonorCampaignsScreen() {
   }, [loadData]);
 
   useEffect(() => {
-    if (!currentUser || currentUser.role !== 'donor') {
+    if (currentUser?.role !== 'donor') {
       return;
     }
 
@@ -420,7 +317,7 @@ export function DonorCampaignsScreen() {
   }, [campaigns, currentUser, donorId, refreshCampaignAuctions]);
 
   const handleDonateMoney = async (campaign: Campaign) => {
-    const value = Number((moneyDraftByCampaign[campaign.id] ?? '').replace(/[^0-9]/g, ''));
+    const value = Number((moneyDraftByCampaign[campaign.id] ?? '').replaceAll(/\D/g, ''));
 
     if (!value || value <= 0) {
       setDonationFeedbackByCampaign((prev) => ({
@@ -466,7 +363,7 @@ export function DonorCampaignsScreen() {
 
   const handleDonatePhysicalItem = async (campaignId: number) => {
     const selectedItem = selectedPhysicalItemByCampaign[campaignId] ?? PHYSICAL_DONATION_OPTIONS[0].key;
-    const quantity = Number((physicalQuantityByCampaign[campaignId] ?? '').replace(/[^0-9]/g, ''));
+    const quantity = Number((physicalQuantityByCampaign[campaignId] ?? '').replaceAll(/\D/g, ''));
 
     if (!quantity || quantity <= 0) {
       setDonationFeedbackByCampaign((prev) => ({
@@ -510,7 +407,7 @@ export function DonorCampaignsScreen() {
   const handleCreateAuction = async (campaignId: number) => {
     const itemName = (auctionItemDraftByCampaign[campaignId] ?? '').trim();
     const description = (auctionDescriptionDraftByCampaign[campaignId] ?? '').trim();
-    const price = Number((auctionPriceDraftByCampaign[campaignId] ?? '').replace(/[^0-9]/g, ''));
+    const price = Number((auctionPriceDraftByCampaign[campaignId] ?? '').replaceAll(/\D/g, ''));
 
     if (itemName.length < 2) {
       setAuctionFeedbackByCampaign((prev) => ({
@@ -625,7 +522,7 @@ export function DonorCampaignsScreen() {
   };
 
   return (
-    <SafeAreaView className='flex-1 bg-[#eef4ff]'>
+    <View className='flex-1 bg-[#eef4ff]'>
       <View className='flex-1 px-4 pt-6'>
         <Text className='text-2xl font-extrabold text-[#16325d]'>Campanas Activas</Text>
         <Text className='mt-1 text-sm text-[#4d648a]'>
@@ -922,55 +819,17 @@ export function DonorCampaignsScreen() {
         </ScrollView>
       </View>
 
-      <Modal animationType='slide' visible={Boolean(chatCampaignId)}>
-        <SafeAreaView className='flex-1 bg-[#f4f8ff]'>
-          <View className='flex-row items-center px-4 py-3'>
-            <Pressable
-              className='h-10 w-10 items-center justify-center rounded-full bg-white'
-              onPress={() => setChatCampaignId(null)}
-            >
-              <Text className='text-base font-bold text-[#1f4fb6]'>X</Text>
-            </Pressable>
-            <Text className='ml-3 flex-1 text-base font-extrabold text-[#19335b]'>
-              Chat {chatCampaign ? `- ${chatCampaign.name}` : ''}
-            </Text>
-          </View>
-
-          <ScrollView className='flex-1 px-4' contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
-            {chatMessages.length === 0 ? (
-              <Text className='mt-3 text-sm text-[#5d7498]'>
-                Aun no hay mensajes. Inicia la conversacion.
-              </Text>
-            ) : null}
-
-            {chatMessages.map((message) => (
-              <View className='rounded-xl bg-white px-3 py-2' key={message.id}>
-                <Text className='text-xs font-semibold text-[#3b5783]'>
-                  {message.author} - {message.createdAt}
-                </Text>
-                <Text className='mt-1 text-sm text-[#1f365d]'>{message.message}</Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View className='flex-row items-center gap-2 border-t border-[#dce6fb] bg-white px-4 py-3'>
-              <TextInput
-                className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
-                onChangeText={setChatDraft}
-                placeholder='Escribe un mensaje...'
-                placeholderTextColor='#8ea6c8'
-                value={chatDraft}
-              />
-              <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2' onPress={handleSendChat}>
-                <Text className='font-semibold text-white'>Enviar</Text>
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Modal>
+      <CampaignChatModal
+        campaignName={chatCampaign?.name}
+        draft={chatDraft}
+        messages={chatMessages}
+        onChangeDraft={setChatDraft}
+        onClose={() => setChatCampaignId(null)}
+        onSend={handleSendChat}
+        visible={Boolean(chatCampaignId)}
+      />
 
       {currentUser?.role === 'donor' ? <DonorBottomTabs activeTab='campanas' /> : null}
-    </SafeAreaView>
+    </View>
   );
 }

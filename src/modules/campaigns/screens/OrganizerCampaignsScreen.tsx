@@ -1,4 +1,3 @@
-import { FontAwesome5 } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +14,19 @@ import {
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatModal';
+import {
+  AuctionMap,
+  AuctionRealtimeEvent,
+  buildInventoryMap,
+  ChatMessage,
+  ChatMessageCreatedEvent,
+  formatMoney,
+  getErrorMessage,
+  InventoryRealtimeEvent,
+  normalizeCollection,
+  PHYSICAL_DONATION_OPTIONS,
+} from '@/modules/campaigns/utils/campaignsShared';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 import { type Auction, buyAuction, getCampaignAuctions } from '@/services/api/auctionsService';
 import { type Campaign, createCampaign, getCampaigns } from '@/services/api/campaignsService';
@@ -30,108 +42,7 @@ import {
 } from '@/services/realtime/realtimeService';
 import { getUsers, type UserSummary } from '@/services/api/usersService';
 
-type ChatMessage = {
-  id: string;
-  author: string;
-  message: string;
-  createdAt: string;
-};
-
-type AuctionMap = Record<number, Auction[]>;
-type ItemInventoryByCampaign = Record<number, Record<string, number>>;
-
-type ChatMessageCreatedEvent = {
-  id: number | string;
-  campaignId: number;
-  authorId?: number;
-  authorName?: string;
-  message: string;
-  createdAt?: string;
-};
-
-type AuctionRealtimeEvent = {
-  campaignId: number;
-};
-
-type InventoryRealtimeEvent = {
-  campaignId: number;
-};
-
 const DEFAULT_CREATED_BY = 1;
-
-const PHYSICAL_DONATION_OPTIONS = [
-  { key: 'cama', label: 'Camas' },
-  { key: 'colchon', label: 'Colchones' },
-  { key: 'cobija', label: 'Cobijas' },
-  { key: 'kit_higiene', label: 'Kits de higiene' },
-  { key: 'alimento', label: 'Alimentos' },
-] as const;
-
-function normalizeCollection<T>(response: unknown): T[] {
-  if (Array.isArray(response)) {
-    return response as T[];
-  }
-
-  if (
-    typeof response === 'object' &&
-    response !== null &&
-    'data' in response &&
-    Array.isArray((response as { data?: unknown }).data)
-  ) {
-    return (response as { data: T[] }).data;
-  }
-
-  return [];
-}
-
-function buildInventoryMap(itemDonations: ItemDonationResponse[]): ItemInventoryByCampaign {
-  return itemDonations.reduce<ItemInventoryByCampaign>((acc, donation) => {
-    const campaignBucket = acc[donation.campaignId] ?? {};
-    const itemKey = donation.itemType;
-
-    acc[donation.campaignId] = {
-      ...campaignBucket,
-      [itemKey]: (campaignBucket[itemKey] ?? 0) + donation.quantity,
-    };
-
-    return acc;
-  }, {});
-}
-
-function getErrorMessage(error: unknown) {
-  if (!(error instanceof Error)) {
-    return 'Error desconocido.';
-  }
-
-  const rawMessage = error.message?.trim();
-  if (!rawMessage) {
-    return 'Error desconocido.';
-  }
-
-  try {
-    const parsed = JSON.parse(rawMessage) as { message?: string | string[] };
-
-    if (Array.isArray(parsed.message)) {
-      return parsed.message.join(' | ');
-    }
-
-    if (typeof parsed.message === 'string') {
-      return parsed.message;
-    }
-
-    return rawMessage;
-  } catch {
-    return rawMessage;
-  }
-}
-
-function formatMoney(value: number) {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 export function OrganizerCampaignsScreen() {
   const { currentUser } = useAuthSession();
@@ -416,7 +327,7 @@ export function OrganizerCampaignsScreen() {
       return;
     }
 
-    const parsedGoalMoney = Number(goalMoney.replace(/[^0-9]/g, '')) || 0;
+    const parsedGoalMoney = Number(goalMoney.replaceAll(/\D/g, '')) || 0;
     const selectedEvent = eventsById.get(selectedEventId);
 
     setIsSubmitting(true);
@@ -774,51 +685,15 @@ export function OrganizerCampaignsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal animationType='slide' visible={Boolean(chatCampaignId)}>
-        <SafeAreaView className='flex-1 bg-[#f4f8ff]'>
-          <View className='flex-row items-center px-4 py-3'>
-            <Pressable
-              className='h-10 w-10 items-center justify-center rounded-full bg-white'
-              onPress={() => setChatCampaignId(null)}
-            >
-              <FontAwesome5 color='#1f4fb6' name='times' size={16} />
-            </Pressable>
-            <Text className='ml-3 flex-1 text-base font-extrabold text-[#19335b]'>
-              Chat {chatCampaign ? `- ${chatCampaign.name}` : ''}
-            </Text>
-          </View>
-
-          <ScrollView className='flex-1 px-4' contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
-            {chatMessages.length === 0 ? (
-              <Text className='mt-3 text-sm text-[#5d7498]'>
-                Aun no hay mensajes. Inicia la conversacion.
-              </Text>
-            ) : null}
-
-            {chatMessages.map((message) => (
-              <View className='rounded-xl bg-white px-3 py-2' key={message.id}>
-                <Text className='text-xs font-semibold text-[#3b5783]'>
-                  {message.author} - {message.createdAt}
-                </Text>
-                <Text className='mt-1 text-sm text-[#1f365d]'>{message.message}</Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          <View className='flex-row items-center gap-2 border-t border-[#dce6fb] bg-white px-4 py-3'>
-            <TextInput
-              className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
-              onChangeText={setChatDraft}
-              placeholder='Escribe un mensaje...'
-              placeholderTextColor='#8ea6c8'
-              value={chatDraft}
-            />
-            <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2' onPress={handleSendChat}>
-              <Text className='font-semibold text-white'>Enviar</Text>
-            </Pressable>
-          </View>
-        </SafeAreaView>
-      </Modal>
+      <CampaignChatModal
+        campaignName={chatCampaign?.name}
+        draft={chatDraft}
+        messages={chatMessages}
+        onChangeDraft={setChatDraft}
+        onClose={() => setChatCampaignId(null)}
+        onSend={handleSendChat}
+        visible={Boolean(chatCampaignId)}
+      />
 
       <OrganizerBottomTabs activeTab='campanas' />
     </SafeAreaView>
