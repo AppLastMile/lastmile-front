@@ -1,5 +1,13 @@
 import { Redirect } from 'expo-router';
 
+import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+
 export default function Index() {
-  return <Redirect href='/(tabs)/home' />;
+  const { currentUser } = useAuthSession();
+
+  if (!currentUser) {
+    return <Redirect href='/(auth)/login' />;
+  }
+
+  return <Redirect href={currentUser.redirectTo as never} />;
 }

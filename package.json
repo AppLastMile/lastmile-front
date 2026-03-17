@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "doctor": "expo-doctor"
   },
-  "dependencies": {
+  "dendencies": {
     "@expo/vector-icons": "^15.0.3",
     "@tamagui/config": "^2.0.0-rc.22",
     "@tamagui/core": "^2.0.0-rc.22",
@@ -23,6 +23,8 @@
     "lottie-react-native": "~7.3.4",
     "nativewind": "^4.2.2",
     "react": "19.1.0",
+    "react-dom": "^19.1.0",
+    "react-leaflet": "^5.0.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
