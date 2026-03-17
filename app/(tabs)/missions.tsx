@@ -26,16 +26,30 @@ const missionsData = [
   }
 ];
 
+const pickupPoints = [
+  { id: 1, name: "Centro comunitario", city: "Bogotá" },
+  { id: 2, name: "Parque principal", city: "Bogotá" },
+  { id: 3, name: "Iglesia central", city: "Bogotá" }
+];
+
 export default function MissionsScreen() {
 
   const [acceptedMissions, setAcceptedMissions] = useState([]);
   const [detailMission, setDetailMission] = useState(null);
   const [confirmMission, setConfirmMission] = useState(null);
 
-  const acceptMission = () => {
+  const [deliveryMission, setDeliveryMission] = useState(null);
+  const [selectedPoint, setSelectedPoint] = useState(null);
 
+  const acceptMission = () => {
     setAcceptedMissions([...acceptedMissions, confirmMission]);
     setConfirmMission(null);
+  };
+
+  const confirmDelivery = () => {
+    alert("Entrega registrada correctamente");
+    setDeliveryMission(null);
+    setSelectedPoint(null);
   };
 
   return (
@@ -123,6 +137,15 @@ export default function MissionsScreen() {
               {mission.location}
             </Text>
 
+            <Pressable
+              style={styles.deliveryButton}
+              onPress={() => setDeliveryMission(mission)}
+            >
+              <Text style={styles.deliveryText}>
+                Registrar entrega
+              </Text>
+            </Pressable>
+
           </View>
 
         ))}
@@ -172,7 +195,7 @@ export default function MissionsScreen() {
       </Modal>
 
 
-      {/* MODAL CONFIRMAR */}
+      {/* MODAL CONFIRMAR MISION */}
       <Modal
         visible={confirmMission !== null}
         transparent
@@ -217,6 +240,66 @@ export default function MissionsScreen() {
           </View>
 
         </View>
+      </Modal>
+
+
+      {/* MODAL REGISTRAR ENTREGA */}
+      <Modal
+        visible={deliveryMission !== null}
+        transparent
+        animationType="fade"
+      >
+
+        <View style={styles.modalBackground}>
+
+          <View style={styles.modalContainer}>
+
+            <Text style={styles.modalTitle}>
+              Registrar entrega
+            </Text>
+
+            <Text style={styles.text}>
+              Selecciona el punto donde entregaste el objeto
+            </Text>
+
+            {pickupPoints.map(point => (
+
+              <Pressable
+                key={point.id}
+                style={[
+                  styles.pointCard,
+                  selectedPoint === point.id && styles.pointSelected
+                ]}
+                onPress={() => setSelectedPoint(point.id)}
+              >
+
+                <Text>{point.name}</Text>
+                <Text style={{ color: "#777" }}>{point.city}</Text>
+
+              </Pressable>
+
+            ))}
+
+            <Pressable
+              style={styles.modalButton}
+              onPress={confirmDelivery}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                Confirmar entrega
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.cancelButton}
+              onPress={() => setDeliveryMission(null)}
+            >
+              <Text>Cancelar</Text>
+            </Pressable>
+
+          </View>
+
+        </View>
+
       </Modal>
 
     </View>
@@ -310,6 +393,31 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 10,
     marginBottom: 10
+  },
+
+  deliveryButton: {
+    backgroundColor: "#177240",
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 8,
+    alignItems: "center"
+  },
+
+  deliveryText: {
+    color: "#fff",
+    fontWeight: "600"
+  },
+
+  pointCard: {
+    backgroundColor: "#f1f1f1",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10
+  },
+
+  pointSelected: {
+    borderWidth: 2,
+    borderColor: "#177240"
   },
 
   modalBackground: {
