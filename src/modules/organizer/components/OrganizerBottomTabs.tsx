@@ -6,18 +6,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type OrganizerTab = 'inicio' | 'campanas' | 'logistica';
 
-type OrganizerBottomTabsProps = {
+type OrganizerBottomTabsProps = Readonly<{
   activeTab: OrganizerTab;
-};
+}>;
 
-type OrganizerTabButtonProps = {
+type OrganizerTabButtonProps = Readonly<{
   id: OrganizerTab;
   label: string;
   icon: React.ComponentProps<typeof FontAwesome5>['name'];
   route: string;
   isActive: boolean;
   onPress: (route: string) => void;
-};
+}>;
 
 function OrganizerTabButton({
   id,
@@ -100,7 +100,7 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
     {
       id: 'inicio',
       label: 'Inicio',
-      icon: 'map-marked-alt',
+      icon: 'home',
       route: '/organizer/create-mission',
     },
     {

@@ -53,6 +53,7 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const isDisabled = useMemo(
     () => isSubmitting || !email.trim() || !password.trim(),
@@ -93,45 +94,55 @@ export function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className='flex-1 px-6 pb-6'
       >
-        <Animated.View entering={FadeInDown.duration(550)} className='mt-8'>
-          <View className='h-20 w-20 items-center justify-center rounded-3xl bg-[#1f5fe0]'>
-            <FontAwesome5 color='#fff' name='hands-helping' size={32} />
+        <Animated.View entering={FadeInDown.duration(550)} className='mt-8 items-center'>
+          <View className='h-20 w-20 items-center justify-center rounded-3xl bg-[#e8f0ff]'>
+            <FontAwesome5 color='#1f5fe0' name='bolt' size={32} />
           </View>
           <Text className='mt-4 text-4xl font-extrabold tracking-tight text-[#122648]'>
-            LastMile
+            Last<Text className='text-[#1f5fe0]'>Mile</Text>
           </Text>
-          <Text className='mt-2 text-base leading-6 text-[#4a5f80]'>
-            Conecta organizadores, donantes y voluntarios para impactar donde mas se necesita.
+          <Text className='mt-1 text-xs font-semibold uppercase tracking-widest text-[#4a5f80]'>
+            Ayuda en tiempo real, impacto real.
           </Text>
         </Animated.View>
 
         <Animated.View
-          className='mt-6 rounded-3xl border border-[#dfe8ff] bg-white/95 p-5'
+          className='mt-8 rounded-3xl border border-[#dfe8ff] bg-white/95 p-6'
           entering={FadeInDown.delay(100).duration(550)}
         >
-          <Text className='text-sm font-semibold uppercase tracking-wide text-[#4f6487]'>
-            Iniciar Sesion
+          <Text className='text-2xl font-bold text-[#122648]'>Bienvenido</Text>
+          <Text className='mt-1 text-base text-[#4a5f80]'>
+            Ingresa tus credenciales para continuar
           </Text>
 
-          <Text className='mt-4 mb-2 text-sm font-medium text-[#2d4468]'>Correo</Text>
+          <Text className='mt-6 mb-2 text-sm font-medium text-[#2d4468]'>Correo Electrónico</Text>
           <TextInput
             autoCapitalize='none'
             className='rounded-xl border border-[#cad8f6] bg-[#f9fbff] px-4 py-3 text-[15px] text-[#13274a]'
             onChangeText={setEmail}
-            placeholder='correo@lastmile.com'
+            placeholder='usuario@lastmile.com'
             placeholderTextColor='#88a0c6'
             value={email}
           />
 
-          <Text className='mt-4 mb-2 text-sm font-medium text-[#2d4468]'>Contrasena</Text>
-          <TextInput
-            className='rounded-xl border border-[#cad8f6] bg-[#f9fbff] px-4 py-3 text-[15px] text-[#13274a]'
-            onChangeText={setPassword}
-            placeholder='******'
-            placeholderTextColor='#88a0c6'
-            secureTextEntry
-            value={password}
-          />
+          <Text className='mt-4 mb-2 text-sm font-medium text-[#2d4468]'>Contraseña</Text>
+          <View className='flex-row items-center rounded-xl border border-[#cad8f6] bg-[#f9fbff] px-4 py-3'>
+            <TextInput
+              className='flex-1 text-[15px] text-[#13274a]'
+              onChangeText={setPassword}
+              placeholder='••••••••'
+              placeholderTextColor='#88a0c6'
+              secureTextEntry={!showPassword}
+              value={password}
+            />
+            <Pressable onPress={() => setShowPassword(!showPassword)}>
+              <FontAwesome5
+                color='#88a0c6'
+                name={showPassword ? 'eye' : 'eye-slash'}
+                size={18}
+              />
+            </Pressable>
+          </View>
 
           {error ? (
             <Animated.View entering={FadeInUp.duration(220)} layout={Layout.springify()}>
@@ -140,17 +151,42 @@ export function LoginScreen() {
           ) : null}
 
           <Pressable
-            className={`mt-5 rounded-2xl px-4 py-4 ${
+            className={`mt-6 rounded-2xl px-4 py-4 ${
               isDisabled ? 'bg-[#9eb8e8]' : 'bg-[#1f5fe0]'
             }`}
             disabled={isDisabled}
             onPress={handleLogin}
           >
-            <Text className='text-center text-base font-semibold text-white'>
-              {isSubmitting ? 'Ingresando...' : 'Entrar'}
+            <Text className='text-center text-base font-bold uppercase tracking-wide text-white'>
+              {isSubmitting ? 'Ingresando...' : 'Entrar al Sistema'}
+            </Text>
+          </Pressable>
+
+          <Pressable className='mt-4 opacity-60' disabled>
+            <Text className='text-center text-sm font-semibold text-[#1f5fe0]'>
+              ¿OLVÍDASTE TU CLAVE?
             </Text>
           </Pressable>
         </Animated.View>
+
+        <Animated.View
+          className='mt-6 items-center'
+          entering={FadeInDown.delay(200).duration(550)}
+        >
+          <Text className='text-sm text-[#4a5f80]'>¿No tienes una cuenta?</Text>
+          <Pressable className='opacity-60' disabled>
+            <Text className='mt-2 text-base font-bold uppercase tracking-wide text-[#1f5fe0]'>
+              Crear Cuenta
+            </Text>
+          </Pressable>
+        </Animated.View>
+
+        <View className='mt-auto pt-6 pb-4 items-center'>
+          <Text className='text-xs font-medium tracking-wide text-[#8a9fb8]'>
+            DESARROLLADO POR {' '}
+            <Text className='font-bold text-[#122648]'>EQUIPO GÉNESIS</Text>
+          </Text>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
