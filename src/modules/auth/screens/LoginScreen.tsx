@@ -184,7 +184,7 @@ export function LoginScreen() {
         <View className='mt-auto pt-6 pb-4 items-center'>
           <Text className='text-xs font-medium tracking-wide text-[#8a9fb8]'>
             Desarrollado por {' '}
-            <Text className='font-bold text-[#122648]'>TEAM GÉNESIS</Text>
+            <Text className='font-bold text-[#122648]'>EQUIPO GÉNESIS</Text>
           </Text>
         </View>
       </KeyboardAvoidingView>
