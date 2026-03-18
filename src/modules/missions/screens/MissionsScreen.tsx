@@ -1,59 +1,50 @@
 import { AppScreen } from '@/components/ui/AppScreen';
-import { View, Text, FlatList, Pressable } from 'react-native';
-import { useState, useEffect } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, Text, FlatList, Pressable, ActivityIndicator } from 'react-native';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
 
-interface Mission {
-  id: string;
-  title: string;
-  location: string;
-  status: 'available' | 'taken' | 'delivered';
-}
+import { useMissionStatus } from '../hooks/useMissionStatus';
+import { getEvents, type EventSummary } from '@/services/api/eventsService';
 
 export function MissionsScreen() {
   const router = useRouter();
-  const { acceptedId } = useLocalSearchParams();
 
-  const [missions, setMissions] = useState<Mission[]>([
-    {
-      id: '1',
-      title: 'Entrega de alimentos',
-      location: 'Bogotá - Chapinero',
-      status: 'available',
-    },
-    {
-      id: '2',
-      title: 'Recolectar donaciones',
-      location: 'Bogotá - Suba',
-      status: 'available',
-    },
-  ]);
+  const { getStatus, updateMission } = useMissionStatus();
 
+  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // cargar eventos (igual que mapa)
   useEffect(() => {
-    if (acceptedId) {
-      setMissions((prev) =>
-        prev.map((m) =>
-          m.id === acceptedId
-            ? { ...m, status: 'taken' }
-            : m
-        )
-      );
+    async function load() {
+      try {
+        const response = await getEvents({ page: 1, limit: 100 });
+        setEvents(response.data);
+      } catch (e) {
+        console.log('Error cargando missions', e);
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [acceptedId]);
 
-  //  entregar misión
+    load();
+  }, []);
+
+  // 🔥 separar por estado dinámico
+  const available = events.filter(
+    (e) => getStatus(String(e.id)) === 'available'
+  );
+
+  const taken = events.filter(
+    (e) => getStatus(String(e.id)) === 'taken'
+  );
+
+  // 👉 entregar misión
   const deliverMission = (id: string) => {
-    setMissions((prev) =>
-      prev.map((m) =>
-        m.id === id ? { ...m, status: 'delivered' } : m
-      )
-    );
+    updateMission(id, 'delivered');
   };
 
-  const available = missions.filter((m) => m.status === 'available');
-  const taken = missions.filter((m) => m.status === 'taken');
-
-  const renderAvailable = ({ item }: { item: Mission }) => (
+  const renderAvailable = ({ item }: { item: EventSummary }) => (
     <Pressable
       onPress={() => router.push(`/missions/${item.id}`)}
       style={{
@@ -63,12 +54,12 @@ export function MissionsScreen() {
         marginBottom: 12,
       }}
     >
-      <Text style={{ fontWeight: 'bold' }}>{item.title}</Text>
-      <Text style={{ color: 'gray' }}> {item.location}</Text>
+      <Text style={{ fontWeight: 'bold' }}>{item.name}</Text>
+      <Text style={{ color: 'gray' }}>📍 {item.city}</Text>
     </Pressable>
   );
 
-  const renderTaken = ({ item }: { item: Mission }) => (
+  const renderTaken = ({ item }: { item: EventSummary }) => (
     <View
       style={{
         backgroundColor: '#e0f2fe',
@@ -77,11 +68,11 @@ export function MissionsScreen() {
         marginBottom: 12,
       }}
     >
-      <Text style={{ fontWeight: 'bold' }}>{item.title}</Text>
-      <Text style={{ color: 'gray' }}> {item.location}</Text>
+      <Text style={{ fontWeight: 'bold' }}>{item.name}</Text>
+      <Text style={{ color: 'gray' }}>📍 {item.city}</Text>
 
       <Pressable
-        onPress={() => deliverMission(item.id)}
+        onPress={() => deliverMission(String(item.id))}
         style={{
           marginTop: 10,
           backgroundColor: '#16a34a',
@@ -95,6 +86,14 @@ export function MissionsScreen() {
     </View>
   );
 
+  if (loading) {
+    return (
+      <AppScreen>
+        <ActivityIndicator />
+      </AppScreen>
+    );
+  }
+
   return (
     <AppScreen>
       <View style={{ flex: 1, padding: 16 }}>
@@ -106,7 +105,7 @@ export function MissionsScreen() {
 
         <FlatList
           data={available}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           renderItem={renderAvailable}
         />
 
@@ -124,7 +123,7 @@ export function MissionsScreen() {
 
         <FlatList
           data={taken}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => String(item.id)}
           renderItem={renderTaken}
         />
       </View>

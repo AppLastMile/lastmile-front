@@ -1,9 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Animated, Platform, View } from 'react-native';
-
-import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 
 type TabIconProps = {
   focused: boolean;
@@ -53,12 +51,10 @@ function TabIcon({ focused, color, name }: TabIconProps) {
 }
 
 export default function TabsLayout() {
-  const { currentUser } = useAuthSession();
-  const isDonor = currentUser?.role === 'donor';
+  // 🔥 Usuario falso para desarrollo
+  const fakeUser = { role: 'volunteer' };
 
-  if (!currentUser) {
-    return <Redirect href='/(auth)/login' />;
-  }
+  const isDonor = fakeUser.role === 'donor';
 
   return (
     <Tabs
@@ -108,9 +104,13 @@ export default function TabsLayout() {
       <Tabs.Screen
         name='missions'
         options={{
-          title: isDonor ? 'Campanas' : 'Missions',
+          title: isDonor ? 'Campañas' : 'Missions',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon color={color} focused={focused} name={isDonor ? 'megaphone' : 'reader'} />
+            <TabIcon
+              color={color}
+              focused={focused}
+              name={isDonor ? 'megaphone' : 'reader'}
+            />
           ),
         }}
       />
