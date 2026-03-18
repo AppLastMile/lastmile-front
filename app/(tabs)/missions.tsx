@@ -5,15 +5,15 @@ import { DonorCampaignsScreen } from '@/modules/campaigns/screens/DonorCampaigns
 import { MissionsScreen } from '@/modules/missions/screens/MissionsScreen';
 
 export default function MissionsRoute() {
-	const { currentUser } = useAuthSession();
+  const { currentUser } = useAuthSession();
 
-	if (!currentUser) {
-		return <Redirect href='/(auth)/login' />;
-	}
+  if (!currentUser) {
+    return <Redirect href='/(auth)/login' />;
+  }
 
-	if (currentUser.role === 'donor') {
-		return <DonorCampaignsScreen />;
-	}
+  if (currentUser.role === 'donor') {
+    return <DonorCampaignsScreen />;
+  }
 
-	return <MissionsScreen />;
+  return <MissionsScreen />;
 }
