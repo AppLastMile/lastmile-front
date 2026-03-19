@@ -42,6 +42,8 @@ export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
 
+  const [filter, setFilter] = useState<'all' | 'available' | 'taken'>('all');
+
   const [mapRef, setMapRef] = useState<MapView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
@@ -68,6 +70,19 @@ export function MapScreen() {
         ),
     [events]
   );
+
+  // FILTRO
+  const filteredEvents = useMemo(() => {
+    return mappedEvents.filter(({ event }) => {
+      const status = getStatus(String(event.id));
+
+      if (filter === 'all') return true;
+      if (filter === 'available') return status === 'available';
+      if (filter === 'taken') return status === 'taken';
+
+      return true;
+    });
+  }, [mappedEvents, filter]);
 
   // cargar eventos
   const loadEvents = useCallback(async () => {
@@ -179,9 +194,67 @@ export function MapScreen() {
             Mapa de eventos
           </Text>
 
+          {/* 🔥 FILTROS */}
+          <View className='flex-row gap-2 mt-3'>
+            <Pressable
+              onPress={() => setFilter('all')}
+              className='px-3 py-2 rounded-xl'
+              style={{
+                backgroundColor:
+                  filter === 'all' ? '#1f5fe0' : '#e5e7eb',
+              }}
+            >
+              <Text
+                style={{
+                  color: filter === 'all' ? '#fff' : '#000',
+                }}
+              >
+                Todas
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setFilter('available')}
+              className='px-3 py-2 rounded-xl'
+              style={{
+                backgroundColor:
+                  filter === 'available'
+                    ? '#dc2626'
+                    : '#e5e7eb',
+              }}
+            >
+              <Text
+                style={{
+                  color: filter === 'available' ? '#fff' : '#000',
+                }}
+              >
+                Disponibles
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setFilter('taken')}
+              className='px-3 py-2 rounded-xl'
+              style={{
+                backgroundColor:
+                  filter === 'taken'
+                    ? '#2563eb'
+                    : '#e5e7eb',
+              }}
+            >
+              <Text
+                style={{
+                  color: filter === 'taken' ? '#fff' : '#000',
+                }}
+              >
+                Aceptadas
+              </Text>
+            </Pressable>
+          </View>
+
           <View className='mt-3 flex-row items-center justify-between'>
             <Text className='text-sm font-semibold text-[#2a456e]'>
-              Marcadores: {mappedEvents.length}
+              Marcadores: {filteredEvents.length}
             </Text>
 
             <Pressable
@@ -211,8 +284,8 @@ export function MapScreen() {
         >
           <UrlTile urlTemplate='https://tile.openstreetmap.org/{z}/{x}/{y}.png' />
 
-          {/* 🔥 MARKERS CON ESTADO */}
-          {mappedEvents.map(({ event, city }) => {
+          {/* MARKERS FILTRADOS */}
+          {filteredEvents.map(({ event, city }) => {
             const status = getStatus(String(event.id));
 
             const color =
@@ -239,18 +312,15 @@ export function MapScreen() {
             );
           })}
 
-          {/* 📍 TU UBICACIÓN */}
           {myLocation && (
             <Marker
               coordinate={myLocation}
               title='Tu ubicación'
-              description='Ubicación actual del dispositivo'
               pinColor='#2563eb'
             />
           )}
         </MapView>
 
-        {/* 🔄 LOADING */}
         {isLoading && (
           <View className='absolute top-3 left-0 right-0 items-center'>
             <View className='rounded-full bg-white px-4 py-2'>
@@ -258,39 +328,8 @@ export function MapScreen() {
             </View>
           </View>
         )}
-
-        {/* ❌ ERROR */}
-        {error && (
-          <View className='absolute top-3 left-3 right-3 bg-[#ffecef] px-3 py-2 rounded-xl'>
-            <Text className='text-[#a1263d]'>{error}</Text>
-          </View>
-        )}
-
-        {/* 📍 BOTÓN UBICACIÓN */}
-        <View className='absolute right-3 top-16'>
-          <Pressable
-            onPress={centerOnMyLocation}
-            disabled={!myLocation}
-            className='bg-[#1f5fe0] px-3 py-2 rounded-xl'
-            style={{ opacity: myLocation ? 1 : 0.6 }}
-          >
-            <Text className='text-white text-xs font-semibold'>
-              Mi ubicación
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* ⏳ OBTENIENDO UBICACIÓN */}
-        {isLocating && (
-          <View className='absolute right-3 top-28 bg-white px-3 py-2 rounded-xl'>
-            <Text className='text-xs text-[#4d648a]'>
-              Obteniendo ubicación...
-            </Text>
-          </View>
-        )}
       </View>
 
-      {/* 👤 DONOR TABS */}
       {isDonor && <DonorBottomTabs activeTab='inicio' />}
     </SafeAreaView>
   );
