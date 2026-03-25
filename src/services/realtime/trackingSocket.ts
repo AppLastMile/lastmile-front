@@ -10,425 +10,218 @@ type TrackingAuth = {
   role?: string;
 };
 
-type TrackingConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+type PickupPoint = {
+  id: string;
+  campaignId: string;
+  latitude: number;
+  longitude: number;
+  name: string;
+  description?: string;
+};
+
+type PickupPointHandler = (point: PickupPoint) => void;
+
+type TrackingConnectionStatus =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'error';
 
 type TrackingStatusHandler = (status: TrackingConnectionStatus) => void;
 type TrackingLocationHandler = (payload: ShipmentLocationPoint) => void;
-type TrackingAckHandler = (payload: ShipmentLocationPoint) => void;
 type TrackingErrorHandler = (message: string) => void;
 
 type TrackingHandlers = {
   onStatus?: TrackingStatusHandler;
   onLocation?: TrackingLocationHandler;
-  onAck?: TrackingAckHandler;
   onError?: TrackingErrorHandler;
-};
-
-type TrackingLocationUpdatePayload = {
-  shipmentId: number;
-  lat: number;
-  lng: number;
-  speed?: number;
-  heading?: number;
-  recordedAt?: string;
+  onPickupPointCreated?: PickupPointHandler;
 };
 
 type KnownEnvKey =
   | 'EXPO_PUBLIC_API_URL'
   | 'EXPO_PUBLIC_WS_URL'
   | 'EXPO_PUBLIC_WS_NAMESPACE'
-  | 'EXPO_PUBLIC_WS_PATH'
-  | 'EXPO_PUBLIC_WS_TRANSPORTS'
-  | 'EXPO_PUBLIC_WS_DEBUG';
+  | 'EXPO_PUBLIC_WS_PATH';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const DEFAULT_WS_NAMESPACE = '/ws';
 const DEFAULT_WS_PATH = '/socket.io';
-const MAX_QUEUE_SIZE = 50;
 
-const KNOWN_EXPO_ENV: Record<KnownEnvKey, string | undefined> = {
+const ENV: Record<KnownEnvKey, string | undefined> = {
   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
   EXPO_PUBLIC_WS_URL: process.env.EXPO_PUBLIC_WS_URL,
   EXPO_PUBLIC_WS_NAMESPACE: process.env.EXPO_PUBLIC_WS_NAMESPACE,
   EXPO_PUBLIC_WS_PATH: process.env.EXPO_PUBLIC_WS_PATH,
-  EXPO_PUBLIC_WS_TRANSPORTS: process.env.EXPO_PUBLIC_WS_TRANSPORTS,
-  EXPO_PUBLIC_WS_DEBUG: process.env.EXPO_PUBLIC_WS_DEBUG,
 };
 
 let socket: Socket | null = null;
+let activeCampaignId: string | null = null;
 let activeShipmentId: number | null = null;
 let handlers: TrackingHandlers = {};
-const pendingUpdates: TrackingLocationUpdatePayload[] = [];
 
-function getEnvValue(key: KnownEnvKey) {
-  return KNOWN_EXPO_ENV[key];
-}
 
-function isTruthyEnv(value: string | undefined) {
-  if (!value) {
-    return false;
-  }
+// ================= HELPERS =================
 
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
-}
-
-function isTrackingDebugEnabled() {
-  return isTruthyEnv(getEnvValue('EXPO_PUBLIC_WS_DEBUG'));
-}
-
-function logTrackingDebug(message: string, payload?: unknown) {
-  if (!isTrackingDebugEnabled()) {
-    return;
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(`[tracking] ${message}`, payload ?? '');
+function getEnv(key: KnownEnvKey) {
+  return ENV[key];
 }
 
 function getExpoHostIp() {
   const hostUri =
-    (Constants as { expoConfig?: { hostUri?: string } }).expoConfig?.hostUri ??
-    (Constants as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig?.debuggerHost;
+    (Constants as any)?.expoConfig?.hostUri ??
+    (Constants as any)?.expoGoConfig?.debuggerHost;
 
-  if (!hostUri) {
-    return null;
-  }
-
-  return hostUri.split(':')[0] ?? null;
-}
-
-function getBrowserHost() {
-  const location = (globalThis as { location?: { hostname?: string } }).location;
-  return location?.hostname ?? null;
-}
-
-function getApiBaseUrl() {
-  return getEnvValue('EXPO_PUBLIC_API_URL') ?? DEFAULT_API_BASE_URL;
+  return hostUri ? hostUri.split(':')[0] : null;
 }
 
 function resolveWsBaseUrl() {
-  const envWsUrl = getEnvValue('EXPO_PUBLIC_WS_URL');
+  const envUrl = getEnv('EXPO_PUBLIC_WS_URL');
 
-  if (envWsUrl) {
+  if (envUrl) {
     try {
-      const parsed = new URL(envWsUrl);
+      const parsed = new URL(envUrl);
       parsed.pathname = '';
 
-      const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-
-      if (isLocalhost) {
-        if (Platform.OS === 'web') {
-          const browserHost = getBrowserHost();
-
-          if (browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1') {
-            parsed.hostname = browserHost;
-          }
-        } else {
-          const expoHostIp = getExpoHostIp();
-
-          if (expoHostIp) {
-            parsed.hostname = expoHostIp;
-          } else if (Platform.OS === 'android') {
-            parsed.hostname = '10.0.2.2';
-          }
+      if (
+        parsed.hostname === 'localhost' ||
+        parsed.hostname === '127.0.0.1'
+      ) {
+        if (Platform.OS !== 'web') {
+          parsed.hostname =
+            getExpoHostIp() ??
+            (Platform.OS === 'android' ? '10.0.2.2' : parsed.hostname);
         }
       }
 
       return parsed.toString().replace(/\/$/, '');
     } catch {
-      return envWsUrl;
+      return envUrl;
     }
   }
 
-  const apiUrl = getApiBaseUrl();
-
-  try {
-    const parsed = new URL(apiUrl);
-    parsed.pathname = '';
-
-    const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-
-    if (isLocalhost) {
-      const expoHostIp = getExpoHostIp();
-
-      if (expoHostIp) {
-        parsed.hostname = expoHostIp;
-      } else if (Platform.OS === 'android') {
-        parsed.hostname = '10.0.2.2';
-      }
-    }
-
-    return parsed.toString().replace(/\/$/, '');
-  } catch {
-    return apiUrl;
-  }
+  return getEnv('EXPO_PUBLIC_API_URL') ?? DEFAULT_API_BASE_URL;
 }
 
 function resolveWsNamespace() {
-  const configured = getEnvValue('EXPO_PUBLIC_WS_NAMESPACE')?.trim();
-
-  if (!configured) {
-    return DEFAULT_WS_NAMESPACE;
-  }
-
-  if (!configured.startsWith('/')) {
-    return `/${configured}`;
-  }
-
-  return configured;
+  const ns = getEnv('EXPO_PUBLIC_WS_NAMESPACE');
+  if (!ns) return DEFAULT_WS_NAMESPACE;
+  return ns.startsWith('/') ? ns : `/${ns}`;
 }
 
 function resolveWsPath() {
-  const configured = getEnvValue('EXPO_PUBLIC_WS_PATH')?.trim();
-
-  if (!configured) {
-    return DEFAULT_WS_PATH;
-  }
-
-  if (configured.endsWith('/socket.io')) {
-    return DEFAULT_WS_PATH;
-  }
-
-  if (!configured.startsWith('/')) {
-    return `/${configured}`;
-  }
-
-  return configured;
+  const p = getEnv('EXPO_PUBLIC_WS_PATH');
+  if (!p) return DEFAULT_WS_PATH;
+  return p.startsWith('/') ? p : `/${p}`;
 }
 
-function resolveWsTransports() {
-  const configured = getEnvValue('EXPO_PUBLIC_WS_TRANSPORTS')?.trim();
 
-  if (configured) {
-    const normalized = configured
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter((item): item is 'polling' | 'websocket' => item === 'polling' || item === 'websocket');
-
-    if (normalized.length > 0) {
-      return normalized;
-    }
-  }
-
-  return Platform.OS === 'web' ? ['websocket', 'polling'] : ['polling', 'websocket'];
-}
+// ================= CORE =================
 
 function setStatus(status: TrackingConnectionStatus) {
   handlers.onStatus?.(status);
 }
 
-function normalizeTrackingPoint(payload: Record<string, unknown>) {
-  const lat = payload.lat ?? payload.latitude;
-  const lng = payload.lng ?? payload.longitude;
-  const shipmentId = payload.shipmentId ?? payload.shipment_id;
-
-  if (typeof shipmentId !== 'number' || typeof lat !== 'number' || typeof lng !== 'number') {
-    return null;
-  }
-
-  return {
-    shipmentId,
-    lat,
-    lng,
-    speed: typeof payload.speed === 'number' ? payload.speed : undefined,
-    heading: typeof payload.heading === 'number' ? payload.heading : undefined,
-    recordedAt:
-      typeof payload.recordedAt === 'string'
-        ? payload.recordedAt
-        : typeof payload.recorded_at === 'string'
-          ? payload.recorded_at
-          : new Date().toISOString(),
-  } satisfies ShipmentLocationPoint;
-}
-
-function flushPendingUpdates() {
-  if (!socket?.connected || pendingUpdates.length === 0) {
-    return;
-  }
-
-  while (pendingUpdates.length > 0) {
-    const next = pendingUpdates.shift();
-
-    if (!next) {
-      break;
-    }
-
-    socket.emit('shipment.location.update', next);
+function subscribeShipmentIfNeeded() {
+  if (socket?.connected && activeShipmentId) {
+    socket.emit('shipment.subscribe', { shipmentId: activeShipmentId });
   }
 }
 
-function subscribeActiveShipment() {
-  if (!socket?.connected || !activeShipmentId) {
-    return;
+function subscribeCampaignIfNeeded() {
+  if (socket?.connected && activeCampaignId) {
+    socket.emit('campaign.subscribe', { campaignId: activeCampaignId });
   }
-
-  socket.emit('shipment.subscribe', { shipmentId: activeShipmentId });
-  logTrackingDebug('subscribe', { shipmentId: activeShipmentId });
 }
 
-export function connectTrackingSocket(auth: TrackingAuth = {}, nextHandlers: TrackingHandlers = {}) {
+
+// ================= PUBLIC =================
+
+export function subscribeCampaign(campaignId: string) {
+  activeCampaignId = campaignId;
+  subscribeCampaignIfNeeded();
+}
+
+export function connectTrackingSocket(
+  auth: TrackingAuth = {},
+  nextHandlers: TrackingHandlers = {}
+) {
   handlers = { ...handlers, ...nextHandlers };
 
+  // 🔥 ya conectado
   if (socket?.connected) {
-    setStatus('connected');
     return socket;
   }
 
+  // 🔥 reconectar
   if (socket && !socket.connected) {
-    if ((socket as Socket & { active?: boolean }).active) {
-      setStatus('connecting');
-      return socket;
-    }
-
     socket.connect();
-    setStatus('connecting');
     return socket;
   }
 
-  const baseUrl = resolveWsBaseUrl();
-  const namespace = resolveWsNamespace();
-  const path = resolveWsPath();
-  const transports = resolveWsTransports();
-
-  logTrackingDebug('connecting', {
-    platform: Platform.OS,
-    baseUrl,
-    namespace,
-    path,
-    transports,
-  });
-
-  socket = io(`${baseUrl}${namespace}`, {
-    autoConnect: true,
-    timeout: 20000,
+  // 🔥 crear socket
+  socket = io(`${resolveWsBaseUrl()}${resolveWsNamespace()}`, {
+    path: resolveWsPath(),
+    transports: ['websocket', 'polling'],
+    auth,
     reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 10000,
-    randomizationFactor: 0.5,
-    transports,
-    tryAllTransports: true,
-    path,
-    auth: {
-      token: auth.token,
-      userId: auth.userId,
-      role: auth.role,
-    },
   });
 
-  setStatus('connecting');
+  // ================= CONNECTION =================
 
   socket.on('connect', () => {
-    logTrackingDebug('connected', { id: socket?.id });
     setStatus('connected');
-    subscribeActiveShipment();
-    flushPendingUpdates();
+
+    subscribeShipmentIfNeeded();
+    subscribeCampaignIfNeeded(); // 🔥 clave
   });
 
-  socket.on('disconnect', (reason: unknown) => {
-    logTrackingDebug('disconnected', reason);
+  socket.on('disconnect', () => {
     setStatus('disconnected');
   });
 
-  socket.on('connect_error', (error: unknown) => {
-    logTrackingDebug('connect_error', error);
+  socket.on('connect_error', () => {
     setStatus('error');
-    handlers.onError?.('No fue posible conectar al seguimiento en tiempo real.');
+    handlers.onError?.('Error conectando WebSocket');
   });
 
-  socket.on('system.joined', (payload: unknown) => {
-    logTrackingDebug('system.joined', payload);
+  // ================= TRACKING =================
+
+  socket.off('shipment.location.changed');
+  socket.on('shipment.location.changed', (payload: ShipmentLocationPoint) => {
+    handlers.onLocation?.(payload);
   });
 
-  socket.on('system.error', (payload: unknown) => {
-    const message =
-      typeof payload === 'object' && payload && 'message' in payload
-        ? String((payload as { message?: string }).message ?? 'Error de websocket')
-        : 'Error de websocket';
+  // ================= PICKUP POINTS =================
 
-    handlers.onError?.(message);
-  });
+  socket.off('pickup_point.created'); // 🔥 evita duplicados
 
-  socket.on('shipment.location.snapshot', (payload: unknown) => {
-    if (!payload || typeof payload !== 'object') {
-      return;
-    }
+  socket.on('pickup_point.created', (payload: PickupPoint) => {
+    if (!payload?.id) return;
 
-    const point = normalizeTrackingPoint(payload as Record<string, unknown>);
-
-    if (point) {
-      handlers.onLocation?.(point);
-    }
-  });
-
-  socket.on('shipment.location.changed', (payload: unknown) => {
-    if (!payload || typeof payload !== 'object') {
-      return;
-    }
-
-    const point = normalizeTrackingPoint(payload as Record<string, unknown>);
-
-    if (point) {
-      handlers.onLocation?.(point);
-    }
-  });
-
-  socket.on('shipment.location.ack', (payload: unknown) => {
-    if (!payload || typeof payload !== 'object') {
-      return;
-    }
-
-    const point = normalizeTrackingPoint(payload as Record<string, unknown>);
-
-    if (point) {
-      handlers.onAck?.(point);
-    }
-  });
-
-  socket.io.on('reconnect_attempt', (attempt) => {
-    logTrackingDebug('reconnect_attempt', attempt);
-  });
-
-  socket.io.on('reconnect', (attempt) => {
-    logTrackingDebug('reconnect', attempt);
+    handlers.onPickupPointCreated?.(payload);
   });
 
   return socket;
 }
 
+
+// ================= HANDLERS =================
+
 export function setTrackingSocketHandlers(nextHandlers: TrackingHandlers) {
   handlers = { ...handlers, ...nextHandlers };
 }
 
-export function subscribeShipmentTracking(shipmentId: number) {
-  activeShipmentId = shipmentId;
-  subscribeActiveShipment();
-}
 
-export function sendShipmentLocationUpdate(payload: TrackingLocationUpdatePayload) {
-  if (!socket?.connected) {
-    pendingUpdates.push(payload);
-
-    if (pendingUpdates.length > MAX_QUEUE_SIZE) {
-      pendingUpdates.shift();
-    }
-
-    return;
-  }
-
-  socket.emit('shipment.location.update', payload);
-}
+// ================= CLEANUP =================
 
 export function disconnectTrackingSocket() {
-  if (!socket) {
-    return;
-  }
+  socket?.removeAllListeners();
+  socket?.disconnect();
 
-  socket.removeAllListeners();
-  socket.disconnect();
   socket = null;
+  activeCampaignId = null;
   activeShipmentId = null;
-  pendingUpdates.length = 0;
   handlers = {};
-  setStatus('idle');
 }

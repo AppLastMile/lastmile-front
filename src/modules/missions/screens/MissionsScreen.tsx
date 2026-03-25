@@ -6,15 +6,18 @@ import { useRouter } from 'expo-router';
 import { useMissionStatus } from '../hooks/useMissionStatus';
 import { getEvents, type EventSummary } from '@/services/api/eventsService';
 
+type ListItem =
+  | { type: 'title'; title: string }
+  | { type: 'available'; data: EventSummary }
+  | { type: 'taken'; data: EventSummary };
+
 export function MissionsScreen() {
   const router = useRouter();
-
   const { getStatus, updateMission } = useMissionStatus();
 
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // cargar eventos (igual que mapa)
   useEffect(() => {
     async function load() {
       try {
@@ -30,7 +33,6 @@ export function MissionsScreen() {
     load();
   }, []);
 
-  // 🔥 separar por estado dinámico
   const available = events.filter(
     (e) => getStatus(String(e.id)) === 'available'
   );
@@ -39,52 +41,82 @@ export function MissionsScreen() {
     (e) => getStatus(String(e.id)) === 'taken'
   );
 
-  // 👉 entregar misión
   const deliverMission = (id: string) => {
     updateMission(id, 'delivered');
   };
 
-  const renderAvailable = ({ item }: { item: EventSummary }) => (
-    <Pressable
-      onPress={() => router.push(`/missions/${item.id}`)}
-      style={{
-        backgroundColor: '#fff',
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 12,
-      }}
-    >
-      <Text style={{ fontWeight: 'bold' }}>{item.name}</Text>
-      <Text style={{ color: 'gray' }}>📍 {item.city}</Text>
-    </Pressable>
-  );
+  // 🔥 UNIFICAMOS TODO EN UNA LISTA
+  const listData: ListItem[] = [
+    { type: 'title', title: 'Misiones disponibles' },
+    ...available.map((e) => ({ type: 'available' as const, data: e })),
+    { type: 'title', title: 'Misiones aceptadas' },
+    ...taken.map((e) => ({ type: 'taken' as const, data: e })),
+  ];
 
-  const renderTaken = ({ item }: { item: EventSummary }) => (
-    <View
-      style={{
-        backgroundColor: '#e0f2fe',
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 12,
-      }}
-    >
-      <Text style={{ fontWeight: 'bold' }}>{item.name}</Text>
-      <Text style={{ color: 'gray' }}>📍 {item.city}</Text>
+  const renderItem = ({ item }: { item: ListItem }) => {
+    if (item.type === 'title') {
+      return (
+        <Text
+          style={{
+            fontSize: 20,
+            fontWeight: 'bold',
+            marginTop: 20,
+            marginBottom: 10,
+          }}
+        >
+          {item.title}
+        </Text>
+      );
+    }
 
-      <Pressable
-        onPress={() => deliverMission(String(item.id))}
-        style={{
-          marginTop: 10,
-          backgroundColor: '#16a34a',
-          padding: 10,
-          borderRadius: 8,
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ color: '#fff' }}>Confirmar entrega</Text>
-      </Pressable>
-    </View>
-  );
+    if (item.type === 'available') {
+      return (
+        <Pressable
+          onPress={() => router.push(`/missions/${item.data.id}`)}
+          style={{
+            backgroundColor: '#fff',
+            padding: 16,
+            borderRadius: 12,
+            marginBottom: 12,
+          }}
+        >
+          <Text style={{ fontWeight: 'bold' }}>{item.data.name}</Text>
+          <Text style={{ color: 'gray' }}>📍 {item.data.city}</Text>
+        </Pressable>
+      );
+    }
+
+    if (item.type === 'taken') {
+      return (
+        <View
+          style={{
+            backgroundColor: '#e0f2fe',
+            padding: 16,
+            borderRadius: 12,
+            marginBottom: 12,
+          }}
+        >
+          <Text style={{ fontWeight: 'bold' }}>{item.data.name}</Text>
+          <Text style={{ color: 'gray' }}>📍 {item.data.city}</Text>
+
+          <Pressable
+            onPress={() => deliverMission(String(item.data.id))}
+            style={{
+              marginTop: 10,
+              backgroundColor: '#16a34a',
+              padding: 10,
+              borderRadius: 8,
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: '#fff' }}>Confirmar entrega</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    return null;
+  };
 
   if (loading) {
     return (
@@ -96,37 +128,12 @@ export function MissionsScreen() {
 
   return (
     <AppScreen>
-      <View style={{ flex: 1, padding: 16 }}>
-
-        {/* DISPONIBLES */}
-        <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>
-          Misiones disponibles
-        </Text>
-
-        <FlatList
-          data={available}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderAvailable}
-        />
-
-        {/* ACEPTADAS */}
-        <Text
-          style={{
-            fontSize: 20,
-            fontWeight: 'bold',
-            marginTop: 20,
-            marginBottom: 10,
-          }}
-        >
-          Misiones aceptadas
-        </Text>
-
-        <FlatList
-          data={taken}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderTaken}
-        />
-      </View>
+      <FlatList
+        data={listData}
+        keyExtractor={(_, index) => index.toString()}
+        renderItem={renderItem}
+        contentContainerStyle={{ padding: 16 }}
+      />
     </AppScreen>
   );
 }
