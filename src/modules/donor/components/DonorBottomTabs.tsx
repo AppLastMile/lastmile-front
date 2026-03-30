@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type DonorTab = 'inicio' | 'campanas';
+type DonorTab = 'inicio' | 'campanas' | 'subastas';
 
 type DonorBottomTabsProps = {
   activeTab: DonorTab;
@@ -14,9 +14,9 @@ type DonorTabButtonProps = {
   id: DonorTab;
   label: string;
   icon: React.ComponentProps<typeof FontAwesome5>['name'];
-  route: '/(tabs)/map' | '/(tabs)/missions';
+  route: string;
   isActive: boolean;
-  onPress: (route: '/(tabs)/map' | '/(tabs)/missions') => void;
+  onPress: (route: string) => void;
 };
 
 function DonorTabButton({ id, label, icon, route, isActive, onPress }: DonorTabButtonProps) {
@@ -81,7 +81,7 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
     id: DonorTab;
     label: string;
     icon: React.ComponentProps<typeof FontAwesome5>['name'];
-    route: '/(tabs)/map' | '/(tabs)/missions';
+    route: string;
   }> = [
     {
       id: 'inicio',
@@ -94,6 +94,12 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
       label: 'Campanas',
       icon: 'bullhorn',
       route: '/(tabs)/missions',
+    },
+    {
+      id: 'subastas',
+      label: 'Subastas',
+      icon: 'gavel',
+      route: '/auctions',
     },
   ];
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Location from 'expo-location';
 import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
-import MapView, { Marker, UrlTile, type Region } from 'react-native-maps';
+import MapView, { Marker, type Region } from 'react-native-maps';
 
 import {
   findColombianCityByName,
@@ -170,11 +170,6 @@ export function MapScreen() {
         }`}
       >
         <MapView initialRegion={COLOMBIA_REGION} ref={setMapRef} style={{ flex: 1 }}>
-          <UrlTile
-            maximumZ={19}
-            urlTemplate='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-            zIndex={-1}
-          />
 
           {mappedEvents.map(({ event, city }) => (
             <Marker
