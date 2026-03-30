@@ -547,13 +547,13 @@ export function OrganizerCampaignsScreen() {
                               Publicado por: {seller?.name ?? seller?.fullName ?? `Usuario ${auction.sellerId}`}
                             </Text>
                             <Text className='mt-1 text-sm font-extrabold text-[#b56e11]'>
-                              {formatMoney(auction.price)}
+                              {formatMoney((auction.currentPrice ?? auction.initialPrice))}
                             </Text>
 
                             {auction.status === 'active' ? (
                               <Pressable
                                 className='mt-2 self-start rounded-xl bg-[#d18b25] px-3 py-2'
-                                onPress={() => handleBuyAuction(campaignItem.id, auction.id, auction.price)}
+                                onPress={() => handleBuyAuction(campaignItem.id, auction.id, (auction.currentPrice ?? auction.initialPrice))}
                               >
                                 <Text className='text-xs font-bold text-white'>
                                   {isBuyingAuctionById[auction.id] ? 'Comprando...' : 'Comprar'}

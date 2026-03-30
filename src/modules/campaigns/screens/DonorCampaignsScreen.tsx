@@ -5,7 +5,7 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatModal';
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
-import { type Auction, buyAuction, createAuction, getCampaignAuctions } from '@/services/api/auctionsService';
+import { type Auction, buyAuction, createCampaignAuction, getCampaignAuctions } from '@/services/api/auctionsService';
 import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
 import {
   createItemDonation,
@@ -428,7 +428,7 @@ export function DonorCampaignsScreen() {
     setIsCreatingAuctionByCampaign((prev) => ({ ...prev, [campaignId]: true }));
 
     try {
-      await createAuction(campaignId, {
+      await createCampaignAuction(campaignId, {
         sellerId: donorId,
         itemName,
         description,
@@ -780,13 +780,13 @@ export function DonorCampaignsScreen() {
                               Publicado por: {seller?.name ?? seller?.fullName ?? `Usuario ${auction.sellerId}`}
                             </Text>
                             <Text className='mt-1 text-sm font-extrabold text-[#b56e11]'>
-                              {formatMoney(auction.price)}
+                              {formatMoney((auction.currentPrice ?? auction.initialPrice))}
                             </Text>
 
                             {auction.status === 'active' ? (
                               <Pressable
                                 className='mt-2 self-start rounded-xl bg-[#d18b25] px-3 py-2'
-                                onPress={() => handleBuyAuction(campaignItem.id, auction.id, auction.price)}
+                                onPress={() => handleBuyAuction(campaignItem.id, auction.id, (auction.currentPrice ?? auction.initialPrice))}
                               >
                                 <Text className='text-xs font-bold text-white'>
                                   {isBuyingAuctionById[auction.id] ? 'Comprando...' : 'Comprar'}

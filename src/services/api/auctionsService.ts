@@ -66,6 +66,14 @@ export type BuyAuctionPayload = {
   idempotencyKey?: string;
 };
 
+export type CreateCampaignAuctionPayload = {
+  sellerId: number;
+  itemName: string;
+  description?: string;
+  price: number;
+  currency: string;
+};
+
 export async function getAuctions(status?: AuctionStatus) {
   const query = status ? `?status=${status}` : '';
   return httpClient<PaginatedResponse<Auction>>(`/auctions${query}`);
@@ -76,8 +84,15 @@ export async function getAuction(id: number) {
 }
 
 export async function getCampaignAuctions(campaignId: number, status?: 'active' | 'sold' | 'all') {
-  const query = status ? `?status=${status}` : '';
-  return httpClient<PaginatedResponse<Auction>>(`/campaigns/${campaignId}/auctions${query}`);
+  const statusParam = status ?? 'all';
+  return httpClient<PaginatedResponse<Auction>>(`/campaigns/${campaignId}/auctions?status=${statusParam}&page=1&limit=100`);
+}
+
+export async function createCampaignAuction(campaignId: number, payload: CreateCampaignAuctionPayload) {
+  return httpClient<Auction>(`/campaigns/${campaignId}/auctions`, {
+    method: 'POST',
+    body: payload,
+  });
 }
 
 export async function createAuction(payload: CreateAuctionPayload, token?: string) {
