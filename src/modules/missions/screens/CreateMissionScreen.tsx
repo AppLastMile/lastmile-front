@@ -14,7 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import MapView, { Marker, UrlTile, type Region } from 'react-native-maps';
+import MapView, { Marker, type Region } from 'react-native-maps';
 import Animated, { FadeInDown, FadeInUp, Layout } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -348,11 +348,6 @@ export function CreateMissionScreen() {
   return (
     <SafeAreaView className='flex-1 bg-[#dce9f5]'>
       <MapView initialRegion={COLOMBIA_REGION} ref={mapRef} style={{ flex: 1 }}>
-        <UrlTile
-          maximumZ={19}
-          urlTemplate='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-          zIndex={-1}
-        />
 
         {mappedEvents.map(({ event, city }) => (
           <Marker
