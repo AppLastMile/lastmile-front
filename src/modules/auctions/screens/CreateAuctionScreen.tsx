@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { createAuction } from '@/services/api/auctionsService';
+import { type AuctionBidMode, createAuction } from '@/services/api/auctionsService';
 
 function getErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return 'Error desconocido.';
@@ -39,6 +39,8 @@ export function CreateAuctionScreen() {
   const [currency, setCurrency] = useState<'COP' | 'USD'>('COP');
   const [durationMinutes, setDurationMinutes] = useState('60');
   const [campaignId, setCampaignId] = useState('');
+  const [bidMode, setBidMode] = useState<AuctionBidMode>('free');
+  const [bidIncrement, setBidIncrement] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -46,6 +48,7 @@ export function CreateAuctionScreen() {
     productId.trim().length > 0 &&
     initialPrice.trim().length > 0 &&
     durationMinutes.trim().length > 0 &&
+    (bidMode === 'free' || bidIncrement.trim().length > 0) &&
     !isSubmitting;
 
   const handleSubmit = async () => {
@@ -67,6 +70,15 @@ export function CreateAuctionScreen() {
       return;
     }
 
+    let parsedBidIncrement: number | undefined;
+    if (bidMode === 'fixed_increment') {
+      parsedBidIncrement = parseFloat(bidIncrement);
+      if (isNaN(parsedBidIncrement) || parsedBidIncrement <= 0) {
+        setFormError('El incremento de puja debe ser un número mayor a 0.');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     setFormError(null);
 
@@ -78,6 +90,8 @@ export function CreateAuctionScreen() {
           durationMinutes: parsedDuration,
           currency,
           campaignId: parsedCampaignId,
+          bidMode,
+          bidIncrement: parsedBidIncrement,
         },
         currentUser?.accessToken
       );
@@ -257,6 +271,7 @@ export function CreateAuctionScreen() {
                 paddingHorizontal: 16,
                 paddingVertical: 12,
                 color: '#18335f',
+                marginBottom: 14,
               }}
               keyboardType='number-pad'
               onChangeText={setCampaignId}
@@ -264,6 +279,64 @@ export function CreateAuctionScreen() {
               placeholderTextColor='#8ea6c8'
               value={campaignId}
             />
+
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#27436d', marginBottom: 8 }}>
+              Modo de puja
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+              {([
+                { value: 'free' as AuctionBidMode, label: 'Puja libre' },
+                { value: 'fixed_increment' as AuctionBidMode, label: 'Incremento fijo' },
+              ]).map((option) => (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setBidMode(option.value)}
+                  style={{
+                    flex: 1,
+                    borderWidth: 1,
+                    borderRadius: 14,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                    borderColor: bidMode === option.value ? '#1f5fe0' : '#d6e3fb',
+                    backgroundColor: bidMode === option.value ? '#e8f0ff' : '#fff',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: '700',
+                      color: bidMode === option.value ? '#1f4fb6' : '#4a6083',
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {bidMode === 'fixed_increment' ? (
+              <>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#27436d', marginBottom: 4 }}>
+                  Incremento por puja *
+                </Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1,
+                    borderColor: '#d3e2fb',
+                    borderRadius: 14,
+                    backgroundColor: '#f8fbff',
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    color: '#18335f',
+                  }}
+                  keyboardType='numeric'
+                  onChangeText={setBidIncrement}
+                  placeholder='Ej: 5000'
+                  placeholderTextColor='#8ea6c8'
+                  value={bidIncrement}
+                />
+              </>
+            ) : null}
           </View>
 
           {formError ? (

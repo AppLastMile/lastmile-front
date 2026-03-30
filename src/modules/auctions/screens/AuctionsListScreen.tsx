@@ -21,6 +21,7 @@ import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 import {
   type Auction,
+  type AuctionBidMode,
   type AuctionStatus,
   createAuction,
   getAuctions,
@@ -100,6 +101,8 @@ export function AuctionsListScreen() {
   const [currency, setCurrency] = useState<'COP' | 'USD'>('COP');
   const [durationMinutes, setDurationMinutes] = useState('60');
   const [campaignId, setCampaignId] = useState('');
+  const [bidMode, setBidMode] = useState<AuctionBidMode>('free');
+  const [bidIncrement, setBidIncrement] = useState('');
 
   const fetchAuctions = useCallback(async () => {
     setLoadError(null);
@@ -134,6 +137,8 @@ export function AuctionsListScreen() {
     setCurrency('COP');
     setDurationMinutes('60');
     setCampaignId('');
+    setBidMode('free');
+    setBidIncrement('');
     setIsCreateOpen(true);
   };
 
@@ -141,6 +146,7 @@ export function AuctionsListScreen() {
     productId.trim().length > 0 &&
     initialPrice.trim().length > 0 &&
     durationMinutes.trim().length > 0 &&
+    (bidMode === 'free' || bidIncrement.trim().length > 0) &&
     !isSubmitting;
 
   const handleSubmit = async () => {
@@ -162,6 +168,15 @@ export function AuctionsListScreen() {
       return;
     }
 
+    let parsedBidIncrement: number | undefined;
+    if (bidMode === 'fixed_increment') {
+      parsedBidIncrement = parseFloat(bidIncrement);
+      if (isNaN(parsedBidIncrement) || parsedBidIncrement <= 0) {
+        setFormError('El incremento de puja debe ser un número mayor a 0.');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     setFormError(null);
 
@@ -173,6 +188,8 @@ export function AuctionsListScreen() {
           durationMinutes: parsedDuration,
           currency,
           campaignId: parsedCampaignId,
+          bidMode,
+          bidIncrement: parsedBidIncrement,
         },
         currentUser?.accessToken
       );
@@ -580,6 +597,80 @@ export function AuctionsListScreen() {
                   placeholderTextColor='#8ea6c8'
                   value={campaignId}
                 />
+
+                <Text
+                  style={{
+                    marginTop: 12,
+                    marginBottom: 8,
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: '#27436d',
+                  }}
+                >
+                  Modo de puja
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  {([
+                    { value: 'free' as AuctionBidMode, label: 'Puja libre' },
+                    { value: 'fixed_increment' as AuctionBidMode, label: 'Incremento fijo' },
+                  ]).map((option) => (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => setBidMode(option.value)}
+                      style={{
+                        flex: 1,
+                        borderWidth: 1,
+                        borderRadius: 14,
+                        paddingVertical: 12,
+                        alignItems: 'center',
+                        borderColor: bidMode === option.value ? '#1f5fe0' : '#d6e3fb',
+                        backgroundColor: bidMode === option.value ? '#e8f0ff' : '#fff',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: '700',
+                          color: bidMode === option.value ? '#1f4fb6' : '#4a6083',
+                        }}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {bidMode === 'fixed_increment' ? (
+                  <>
+                    <Text
+                      style={{
+                        marginTop: 12,
+                        marginBottom: 4,
+                        fontSize: 13,
+                        fontWeight: '700',
+                        color: '#27436d',
+                      }}
+                    >
+                      Incremento por puja *
+                    </Text>
+                    <TextInput
+                      style={{
+                        borderWidth: 1,
+                        borderColor: '#d3e2fb',
+                        borderRadius: 14,
+                        backgroundColor: '#f8fbff',
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        color: '#18335f',
+                      }}
+                      keyboardType='numeric'
+                      onChangeText={setBidIncrement}
+                      placeholder='Ej: 5000'
+                      placeholderTextColor='#8ea6c8'
+                      value={bidIncrement}
+                    />
+                  </>
+                ) : null}
 
                 {formError ? (
                   <Text

@@ -4,6 +4,8 @@ import { httpClient } from './httpClient';
 
 export type AuctionStatus = 'created' | 'active' | 'closed' | 'sold' | 'cancelled';
 
+export type AuctionBidMode = 'free' | 'fixed_increment';
+
 export type Auction = {
   id: number;
   productId: number;
@@ -16,6 +18,8 @@ export type Auction = {
   currency: string;
   durationMinutes: number;
   status: AuctionStatus;
+  bidMode: AuctionBidMode;
+  bidIncrement: number | null;
   buyerId: number | null;
   winnerId: number | null;
   startedAt: string | null;
@@ -48,11 +52,13 @@ export type CreateAuctionPayload = {
   durationMinutes: number;
   currency?: string;
   campaignId?: number;
+  bidMode?: AuctionBidMode;
+  bidIncrement?: number;
 };
 
 export type PlaceBidPayload = {
   userId: number;
-  amount: number;
+  amount?: number;
 };
 
 export type BuyAuctionPayload = {

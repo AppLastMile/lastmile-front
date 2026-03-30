@@ -236,6 +236,20 @@ export function AuctionDetailScreen() {
 
   const handlePlaceBid = async () => {
     if (!currentUser || !auction) return;
+
+    if (auction.bidMode === 'fixed_increment') {
+      setIsBidding(true);
+      setBidError(null);
+      try {
+        await placeBid(auctionId, { userId: currentUser.id }, currentUser.accessToken);
+      } catch (error) {
+        setBidError(`No se pudo registrar la oferta. ${getErrorMessage(error)}`);
+      } finally {
+        setIsBidding(false);
+      }
+      return;
+    }
+
     const amount = parseFloat(bidAmount);
 
     if (isNaN(amount) || amount <= 0) {
@@ -399,6 +413,14 @@ export function AuctionDetailScreen() {
               <InfoRow label='Moneda' value={auction.currency} />
               <InfoRow label='Duración' value={`${auction.durationMinutes} minutos`} />
               <InfoRow label='Vendedor' value={`#${auction.sellerId}`} />
+              <InfoRow
+                label='Modo de puja'
+                value={
+                  auction.bidMode === 'fixed_increment'
+                    ? `Incremento fijo: +${formatPrice(auction.bidIncrement, auction.currency)}`
+                    : 'Puja libre'
+                }
+              />
               {auction.startedAt ? (
                 <InfoRow
                   label='Iniciada'
@@ -475,66 +497,124 @@ export function AuctionDetailScreen() {
                   >
                     Realizar oferta
                   </Text>
-                  <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 12 }}>
-                    La oferta debe superar{' '}
-                    {formatPrice(
-                      auction.currentPrice ?? auction.initialPrice,
-                      auction.currency
-                    )}
-                    .
-                  </Text>
-                  <TextInput
-                    style={{
-                      borderWidth: 1,
-                      borderColor: '#d3e2fb',
-                      borderRadius: 14,
-                      backgroundColor: '#f8fbff',
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      color: '#18335f',
-                      fontSize: 15,
-                    }}
-                    keyboardType='numeric'
-                    onChangeText={setBidAmount}
-                    placeholder='Monto de la oferta'
-                    placeholderTextColor='#8ea6c8'
-                    value={bidAmount}
-                  />
-                  {bidError ? (
-                    <Text
-                      style={{
-                        marginTop: 8,
-                        backgroundColor: '#ffecef',
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        fontSize: 13,
-                        color: '#9f2238',
-                      }}
-                    >
-                      {bidError}
-                    </Text>
-                  ) : null}
-                  <Pressable
-                    disabled={isBidding || !bidAmount.trim()}
-                    onPress={handlePlaceBid}
-                    style={{
-                      marginTop: 12,
-                      backgroundColor:
-                        isBidding || !bidAmount.trim() ? '#9db8e5' : '#1f5fe0',
-                      borderRadius: 14,
-                      paddingVertical: 14,
-                      alignItems: 'center',
-                    }}
-                  >
-                    {isBidding ? (
-                      <ActivityIndicator color='#fff' size='small' />
-                    ) : (
-                      <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>
-                        Ofertar
+
+                  {auction.bidMode === 'fixed_increment' ? (
+                    <>
+                      <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
+                        Siguiente precio:
                       </Text>
-                    )}
-                  </Pressable>
+                      <Text
+                        style={{
+                          fontSize: 20,
+                          fontWeight: '900',
+                          color: '#1f5fe0',
+                          marginBottom: 12,
+                        }}
+                      >
+                        {formatPrice(
+                          (auction.currentPrice ?? auction.initialPrice) +
+                            (auction.bidIncrement ?? 0),
+                          auction.currency
+                        )}
+                      </Text>
+                      {bidError ? (
+                        <Text
+                          style={{
+                            marginBottom: 8,
+                            backgroundColor: '#ffecef',
+                            borderRadius: 12,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            fontSize: 13,
+                            color: '#9f2238',
+                          }}
+                        >
+                          {bidError}
+                        </Text>
+                      ) : null}
+                      <Pressable
+                        disabled={isBidding}
+                        onPress={handlePlaceBid}
+                        style={{
+                          backgroundColor: isBidding ? '#9db8e5' : '#1f5fe0',
+                          borderRadius: 14,
+                          paddingVertical: 14,
+                          alignItems: 'center',
+                        }}
+                      >
+                        {isBidding ? (
+                          <ActivityIndicator color='#fff' size='small' />
+                        ) : (
+                          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>
+                            Pujar +{formatPrice(auction.bidIncrement, auction.currency)}
+                          </Text>
+                        )}
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 12 }}>
+                        La oferta debe superar{' '}
+                        {formatPrice(
+                          auction.currentPrice ?? auction.initialPrice,
+                          auction.currency
+                        )}
+                        .
+                      </Text>
+                      <TextInput
+                        style={{
+                          borderWidth: 1,
+                          borderColor: '#d3e2fb',
+                          borderRadius: 14,
+                          backgroundColor: '#f8fbff',
+                          paddingHorizontal: 16,
+                          paddingVertical: 12,
+                          color: '#18335f',
+                          fontSize: 15,
+                        }}
+                        keyboardType='numeric'
+                        onChangeText={setBidAmount}
+                        placeholder='Monto de la oferta'
+                        placeholderTextColor='#8ea6c8'
+                        value={bidAmount}
+                      />
+                      {bidError ? (
+                        <Text
+                          style={{
+                            marginTop: 8,
+                            backgroundColor: '#ffecef',
+                            borderRadius: 12,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            fontSize: 13,
+                            color: '#9f2238',
+                          }}
+                        >
+                          {bidError}
+                        </Text>
+                      ) : null}
+                      <Pressable
+                        disabled={isBidding || !bidAmount.trim()}
+                        onPress={handlePlaceBid}
+                        style={{
+                          marginTop: 12,
+                          backgroundColor:
+                            isBidding || !bidAmount.trim() ? '#9db8e5' : '#1f5fe0',
+                          borderRadius: 14,
+                          paddingVertical: 14,
+                          alignItems: 'center',
+                        }}
+                      >
+                        {isBidding ? (
+                          <ActivityIndicator color='#fff' size='small' />
+                        ) : (
+                          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>
+                            Ofertar
+                          </Text>
+                        )}
+                      </Pressable>
+                    </>
+                  )}
                 </View>
 
                 {/* Live bids */}
