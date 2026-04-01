@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
-import Animated, { FadeInDown, FadeInUp, Layout } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeInUp, FadeOutUp, Layout } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -52,6 +52,7 @@ export function CreateMissionScreen() {
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const tabsBottomOffset = Math.max(insets.bottom - 6, 6);
+  const floatingControlsTop = Math.max(insets.top + 16, 40);
   const maxFormHeight = Math.max(
     FORM_MIN_HEIGHT,
     windowHeight - (tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS + FORM_VERTICAL_MARGIN)
@@ -75,6 +76,8 @@ export function CreateMissionScreen() {
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [showOrganizerWelcome, setShowOrganizerWelcome] = useState(true);
+  const controlsTop = showOrganizerWelcome ? floatingControlsTop + 62 : floatingControlsTop;
 
   const canCreateEvent = useMemo(
     () =>
@@ -222,6 +225,19 @@ export function CreateMissionScreen() {
     useCallback(() => {
       loadMapData();
     }, [loadMapData])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      setShowOrganizerWelcome(true);
+      const timeoutId = setTimeout(() => {
+        setShowOrganizerWelcome(false);
+      }, 3200);
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
+    }, [])
   );
 
   useEffect(() => {
@@ -411,12 +427,38 @@ export function CreateMissionScreen() {
         </View>
       ) : null}
 
-      <View className='absolute right-4 top-40'>
+      {showOrganizerWelcome ? (
+        <Animated.View
+          className='absolute left-4 right-4 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'
+          entering={FadeInDown.duration(220)}
+          exiting={FadeOutUp.duration(220)}
+          style={{
+            top: Math.max(insets.top + 8, 12),
+            zIndex: 75,
+            elevation: 75,
+          }}
+        >
+          <View className='flex-row items-center'>
+            <View className='h-8 w-8 items-center justify-center rounded-full bg-[#eaf1ff]'>
+              <MaterialIcons color='#1f5fe0' name='verified-user' size={18} />
+            </View>
+            <View className='ml-3 flex-1'>
+              <Text className='text-sm font-bold text-[#16325d]'>Bienvenido Organizador</Text>
+              <Text className='text-xs text-[#5b7190]'>Gestiona eventos y mapa desde este panel</Text>
+            </View>
+          </View>
+        </Animated.View>
+      ) : null}
+
+      <View className='absolute right-4' style={{ top: controlsTop }}>
         <Pressable
-          className='rounded-xl bg-[#1f5fe0] px-3 py-2'
+          className='rounded-xl px-3 py-2'
           disabled={!myLocation}
           onPress={centerOnMyLocation}
-          style={{ opacity: myLocation ? 1 : 0.65 }}
+          style={{
+            backgroundColor: '#1f5fe0',
+            opacity: myLocation ? 1 : 0.65,
+          }}
         >
           <Text className='text-xs font-semibold text-white'>Mi ubicacion</Text>
         </Pressable>
@@ -440,7 +482,7 @@ export function CreateMissionScreen() {
 
       <View
         className='absolute left-4 items-start'
-        style={{ top: insets.top + 16, zIndex: 70, elevation: 70 }}
+        style={{ top: controlsTop, zIndex: 70, elevation: 70 }}
       >
         <Pressable
           className='h-16 w-16 items-center justify-center rounded-full bg-[#d63c4c]'

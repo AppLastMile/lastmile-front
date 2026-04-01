@@ -91,7 +91,7 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
     },
     {
       id: 'campanas',
-      label: 'Campanas',
+      label: 'Campañas',
       icon: 'bullhorn',
       route: '/(tabs)/missions',
     },

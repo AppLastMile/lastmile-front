@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FontAwesome5 } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
@@ -169,7 +170,11 @@ export function MapScreen() {
           isDonor ? 'border-0' : 'rounded-t-3xl border border-[#d3e2ff]'
         }`}
       >
-        <MapView initialRegion={COLOMBIA_REGION} ref={setMapRef} style={{ flex: 1 }}>
+        <MapView
+          initialRegion={COLOMBIA_REGION}
+          ref={setMapRef}
+          style={{ flex: 1 }}
+        >
 
           {mappedEvents.map(({ event, city }) => (
             <Marker
@@ -216,12 +221,22 @@ export function MapScreen() {
 
         <View className='absolute right-3 top-16'>
           <Pressable
-            className='rounded-xl bg-[#1f5fe0] px-3 py-2'
+            className='flex-row items-center gap-2 rounded-2xl bg-[#1f5fe0] px-4 py-2.5'
             disabled={!myLocation}
             onPress={centerOnMyLocation}
-            style={{ opacity: myLocation ? 1 : 0.65 }}
+            style={{
+              opacity: myLocation ? 1 : 0.65,
+              shadowColor: '#0b327f',
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.24,
+              shadowRadius: 10,
+              elevation: 8,
+            }}
           >
-            <Text className='text-xs font-semibold text-white'>Mi ubicacion</Text>
+            <View className='h-6 w-6 items-center justify-center rounded-full bg-[#e7efff]'>
+              <FontAwesome5 color='#1f5fe0' name='crosshairs' size={11} />
+            </View>
+            <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicacion</Text>
           </Pressable>
         </View>
 
