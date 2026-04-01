@@ -67,8 +67,8 @@ export function MapScreen() {
         setPickupPoint(point);
 
         setRegion({
-          latitude: point.latitude,
-          longitude: point.longitude,
+          latitude: point.latitude ?? 0,
+          longitude: point.longitude ?? 0,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         });

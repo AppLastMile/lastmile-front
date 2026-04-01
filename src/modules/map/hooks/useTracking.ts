@@ -7,7 +7,7 @@ export function useTracking(shipmentId?: number) {
     console.log("🟢 MapScreen render");
     if (!shipmentId) return;
 
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
 
     //const userId = 'volunteer-1';
     const userId = "volunteer-" + Math.floor(Math.random() * 3);

@@ -1,4 +1,4 @@
-import { apiClient } from "./apiClient";
+import { apiClient } from "@/services/api/apiClient";
 
 export async function getPickupPoints(campaignId: string) {
   const response = await apiClient.get(
