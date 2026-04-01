@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FontAwesome5 } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
@@ -27,6 +29,10 @@ type EventWithCity = {
 export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
+  const [showDonorWelcome, setShowDonorWelcome] = useState(true);
+  const donorWelcomeTop = 12;
+  const floatingControlsTop = 24;
+  const controlsTop = isDonor && showDonorWelcome ? floatingControlsTop + 62 : floatingControlsTop;
   const [mapRef, setMapRef] = useState<MapView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
@@ -68,6 +74,25 @@ export function MapScreen() {
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isDonor) {
+        setShowDonorWelcome(false);
+        return;
+      }
+
+      setShowDonorWelcome(true);
+
+      const timeoutId = setTimeout(() => {
+        setShowDonorWelcome(false);
+      }, 3200);
+
+      return () => {
+        clearTimeout(timeoutId);
+      };
+    }, [isDonor])
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -199,8 +224,25 @@ export function MapScreen() {
           ) : null}
         </MapView>
 
+        {isDonor && showDonorWelcome ? (
+          <View
+            className='absolute left-4 right-4 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'
+            style={{ top: donorWelcomeTop }}
+          >
+            <View className='flex-row items-center'>
+              <View className='h-8 w-8 items-center justify-center rounded-full bg-[#eaf1ff]'>
+                <MaterialIcons color='#1f5fe0' name='volunteer-activism' size={18} />
+              </View>
+              <View className='ml-3 flex-1'>
+                <Text className='text-sm font-bold text-[#16325d]'>Bienvenido Donante</Text>
+                <Text className='text-xs text-[#5b7190]'>Apoya campanas activas desde el mapa y sigue tus aportes.</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         {isLoading ? (
-          <View className='absolute left-0 right-0 top-3 items-center'>
+          <View className='absolute left-0 right-0 items-center' style={{ top: isDonor && showDonorWelcome ? 86 : 12 }}>
             <View className='rounded-full bg-white px-4 py-2'>
               <ActivityIndicator color='#1f5fe0' size='small' />
             </View>
@@ -208,18 +250,18 @@ export function MapScreen() {
         ) : null}
 
         {error ? (
-          <View className='absolute left-3 right-3 top-3 rounded-xl bg-[#ffecef] px-3 py-2'>
+          <View className='absolute left-3 right-3 rounded-xl bg-[#ffecef] px-3 py-2' style={{ top: isDonor && showDonorWelcome ? 86 : 12 }}>
             <Text className='text-sm text-[#a1263d]'>{error}</Text>
           </View>
         ) : null}
 
         {locationError ? (
-          <View className='absolute left-3 right-3 top-16 rounded-xl bg-[#fff4e6] px-3 py-2'>
+          <View className='absolute left-3 right-3 rounded-xl bg-[#fff4e6] px-3 py-2' style={{ top: isDonor && showDonorWelcome ? 132 : 64 }}>
             <Text className='text-sm text-[#9a6400]'>{locationError}</Text>
           </View>
         ) : null}
 
-        <View className='absolute right-3 top-20'>
+        <View className='absolute right-4' style={{ top: controlsTop }}>
           <Pressable
             className='flex-row items-center gap-2 rounded-2xl bg-[#1f5fe0] px-4 py-2.5'
             disabled={!myLocation}
@@ -241,7 +283,7 @@ export function MapScreen() {
         </View>
 
         {isLocating ? (
-          <View className='absolute right-3 top-24 rounded-xl bg-white px-3 py-2'>
+          <View className='absolute right-4 rounded-xl bg-white px-3 py-2' style={{ top: controlsTop + 44 }}>
             <Text className='text-xs text-[#4d648a]'>Obteniendo ubicacion...</Text>
           </View>
         ) : null}
