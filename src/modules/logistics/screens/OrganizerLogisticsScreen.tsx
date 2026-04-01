@@ -17,8 +17,10 @@ import {
   type ColombianCity,
 } from '@/modules/missions/constants/colombianCities';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
+import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 import {
+  assignShipmentVolunteer,
   createPickupPoint,
   getPickupPoints,
   getShipments,
@@ -173,7 +175,15 @@ function ShipmentRow({ shipment }: Readonly<{ shipment: Shipment }>) {
   );
 }
 
-function VolunteerCard({ volunteer }: Readonly<{ volunteer: UserSummary }>) {
+function VolunteerCard({
+  volunteer,
+  onAssign,
+  isAssigning,
+}: Readonly<{
+  volunteer: UserSummary;
+  onAssign: (volunteer: UserSummary) => void;
+  isAssigning: boolean;
+}>) {
   const volunteerName = volunteer.fullName ?? volunteer.name ?? 'Sin nombre';
 
   return (
@@ -200,8 +210,11 @@ function VolunteerCard({ volunteer }: Readonly<{ volunteer: UserSummary }>) {
       </View>
       <Text style={{ marginTop: 10, fontSize: 15, fontWeight: '800', color: '#111f3c', textAlign: 'center' }} numberOfLines={1}>{volunteerName}</Text>
       <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 3, letterSpacing: 1 }}>VOLUNTARIO</Text>
-      <Pressable style={{ marginTop: 12, backgroundColor: '#f3f4f6', borderRadius: 10, paddingHorizontal: 22, paddingVertical: 9, width: '100%', alignItems: 'center' }}>
-        <Text style={{ color: '#1e73fa', fontSize: 13, fontWeight: '700' }}>Asignar</Text>
+      <Pressable
+        style={{ marginTop: 12, backgroundColor: '#f3f4f6', borderRadius: 10, paddingHorizontal: 22, paddingVertical: 9, width: '100%', alignItems: 'center' }}
+        onPress={() => onAssign(volunteer)}
+      >
+        <Text style={{ color: '#1e73fa', fontSize: 13, fontWeight: '700' }}>{isAssigning ? 'Asignando...' : 'Asignar'}</Text>
       </Pressable>
     </View>
   );
@@ -212,9 +225,14 @@ export function OrganizerLogisticsScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [volunteers, setVolunteers] = useState<UserSummary[]>([]);
+  const [selectedVolunteerForAssignment, setSelectedVolunteerForAssignment] = useState<UserSummary | null>(null);
+  const [selectedCampaignForAssignment, setSelectedCampaignForAssignment] = useState<number | null>(null);
+  const [isAssigningVolunteer, setIsAssigningVolunteer] = useState(false);
+  const [assignmentFeedback, setAssignmentFeedback] = useState<string | null>(null);
 
   const [isCreatePickupOpen, setIsCreatePickupOpen] = useState(false);
   const [pickupName, setPickupName] = useState('');
@@ -357,14 +375,16 @@ export function OrganizerLogisticsScreen() {
     setLoadError(null);
 
     try {
-      const [eventsResponse, pickupPointsResponse, usersResponse, shipmentsResponse] = await Promise.all([
+      const [eventsResponse, campaignsResponse, pickupPointsResponse, usersResponse, shipmentsResponse] = await Promise.all([
         getEvents(),
+        getCampaigns(),
         getPickupPoints(),
         getUsers(),
         getShipments(),
       ]);
 
       setEvents(eventsResponse.data);
+      setCampaigns(campaignsResponse.data);
       setPickupPoints(pickupPointsResponse.data);
       rememberPickupPoints(pickupPointsResponse.data);
       setShipments(shipmentsResponse.data);
@@ -412,6 +432,56 @@ export function OrganizerLogisticsScreen() {
       setPickupSubmitError(`No se pudo crear el punto. ${getErrorMessage(error)}`);
     } finally {
       setIsCreatingPickup(false);
+    }
+  };
+
+  const handleOpenAssignment = (volunteer: UserSummary) => {
+    setSelectedVolunteerForAssignment(volunteer);
+    setSelectedCampaignForAssignment((current) => current ?? campaigns[0]?.id ?? null);
+    setAssignmentFeedback(null);
+  };
+
+  const handleAssignVolunteerToCampaign = async () => {
+    if (!selectedVolunteerForAssignment || !selectedCampaignForAssignment) {
+      setAssignmentFeedback('Selecciona voluntario y campana.');
+      return;
+    }
+
+    const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignForAssignment);
+
+    if (!selectedCampaign) {
+      setAssignmentFeedback('No se encontro la campaña seleccionada.');
+      return;
+    }
+
+    const shipmentToAssign = shipments.find(
+      (shipment) =>
+        shipment.eventId === selectedCampaign.eventId &&
+        (shipment.assignedVolunteerId === null || shipment.assignedVolunteerId === undefined)
+    );
+
+    if (!shipmentToAssign) {
+      setAssignmentFeedback('No hay envios pendientes para esta campana.');
+      return;
+    }
+
+    setIsAssigningVolunteer(true);
+    setAssignmentFeedback(null);
+
+    try {
+      const updatedShipment = await assignShipmentVolunteer(shipmentToAssign.id, selectedVolunteerForAssignment.id);
+
+      setShipments((prev) =>
+        prev.map((shipment) => (shipment.id === updatedShipment.id ? updatedShipment : shipment))
+      );
+
+      setAssignmentFeedback('Voluntario asignado correctamente.');
+      setSelectedVolunteerForAssignment(null);
+      setSelectedCampaignForAssignment(null);
+    } catch (error) {
+      setAssignmentFeedback(`No se pudo asignar el voluntario. ${getErrorMessage(error)}`);
+    } finally {
+      setIsAssigningVolunteer(false);
     }
   };
 
@@ -607,9 +677,96 @@ export function OrganizerLogisticsScreen() {
             <Text style={{ fontSize: 14, color: '#9ca3af' }}>No hay voluntarios disponibles.</Text>
           ) : (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-              {volunteers.map((volunteer) => <VolunteerCard key={volunteer.id} volunteer={volunteer} />)}
+              {volunteers.map((volunteer) => (
+                <VolunteerCard
+                  key={volunteer.id}
+                  volunteer={volunteer}
+                  onAssign={handleOpenAssignment}
+                  isAssigning={isAssigningVolunteer && selectedVolunteerForAssignment?.id === volunteer.id}
+                />
+              ))}
             </View>
           )}
+
+          {selectedVolunteerForAssignment ? (
+            <View style={{ marginTop: 10, backgroundColor: '#fff', borderRadius: 16, padding: 14 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: '#1b3259', marginBottom: 8 }}>
+                Asignar {selectedVolunteerForAssignment.fullName ?? selectedVolunteerForAssignment.name ?? 'voluntario'} a campaña
+              </Text>
+
+              {campaigns.length === 0 ? (
+                <Text style={{ fontSize: 13, color: '#9ca3af', marginBottom: 10 }}>No hay campanas disponibles.</Text>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {campaigns.map((campaignItem) => {
+                      const isSelectedCampaign = selectedCampaignForAssignment === campaignItem.id;
+                      return (
+                        <Pressable
+                          key={campaignItem.id}
+                          onPress={() => setSelectedCampaignForAssignment(campaignItem.id)}
+                          style={{
+                            borderWidth: 1,
+                            borderRadius: 999,
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                            borderColor: isSelectedCampaign ? '#1f5fe0' : '#d6e3fb',
+                            backgroundColor: isSelectedCampaign ? '#e8f0ff' : '#fff',
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: isSelectedCampaign ? '#1f4fb6' : '#4a6083' }}>
+                            {campaignItem.name}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              )}
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Pressable
+                  onPress={() => {
+                    setSelectedVolunteerForAssignment(null);
+                    setSelectedCampaignForAssignment(null);
+                    setAssignmentFeedback(null);
+                  }}
+                  style={{ borderWidth: 1, borderColor: '#d3def3', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 }}
+                >
+                  <Text style={{ fontWeight: '700', color: '#3a5176' }}>Cancelar</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={handleAssignVolunteerToCampaign}
+                  disabled={isAssigningVolunteer || campaigns.length === 0}
+                  style={{
+                    borderRadius: 12,
+                    paddingHorizontal: 18,
+                    paddingVertical: 10,
+                    backgroundColor: isAssigningVolunteer || campaigns.length === 0 ? '#9db8e5' : '#1f5fe0',
+                  }}
+                >
+                  <Text style={{ fontWeight: '700', color: '#fff' }}>{isAssigningVolunteer ? 'Asignando...' : 'Confirmar'}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          {assignmentFeedback ? (
+            <Text
+              style={{
+                marginTop: 10,
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                fontSize: 13,
+                color: assignmentFeedback.includes('correctamente') ? '#166534' : '#9f2238',
+                backgroundColor: assignmentFeedback.includes('correctamente') ? '#e8f7ec' : '#ffecef',
+              }}
+            >
+              {assignmentFeedback}
+            </Text>
+          ) : null}
         </View>
 
       </ScrollView>
