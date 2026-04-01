@@ -523,7 +523,7 @@ export function DonorCampaignsScreen() {
 
   return (
     <View className='flex-1 bg-[#eef4ff]'>
-      <View className='flex-1 px-4 pt-6'>
+      <View className='flex-1 px-4 pt-14'>
         <Text className='text-2xl font-extrabold text-[#16325d]'>Campanas Activas</Text>
         <Text className='mt-1 text-sm text-[#4d648a]'>
           Campanas creadas por organizadores para apoyar las misiones.

@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 
 function getRoleLabel(role?: string) {
@@ -25,6 +26,8 @@ export function ProfileScreen() {
   const router = useRouter();
   const { currentUser, logout } = useAuthSession();
   const isOrganizer = currentUser?.role === 'organizer';
+  const isDonor = currentUser?.role === 'donor';
+  const hasBottomTabs = isOrganizer || isDonor;
 
   const handleLogout = () => {
     logout();
@@ -33,7 +36,7 @@ export function ProfileScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: isOrganizer ? 120 : 24 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: hasBottomTabs ? 120 : 24 }}>
         <View className='rounded-2xl border border-[#d8e7ff] bg-white px-5 py-6'>
           <Text className='text-2xl font-extrabold text-[#15325c]'>Perfil</Text>
           <Text className='mt-2 text-sm text-[#5b7190]'>
@@ -66,6 +69,7 @@ export function ProfileScreen() {
       </ScrollView>
 
       {isOrganizer ? <OrganizerBottomTabs activeTab='perfil' /> : null}
+      {isDonor ? <DonorBottomTabs activeTab='perfil' /> : null}
     </SafeAreaView>
   );
 }

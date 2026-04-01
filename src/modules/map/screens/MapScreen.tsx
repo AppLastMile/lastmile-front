@@ -219,7 +219,7 @@ export function MapScreen() {
           </View>
         ) : null}
 
-        <View className='absolute right-3 top-16'>
+        <View className='absolute right-3 top-20'>
           <Pressable
             className='flex-row items-center gap-2 rounded-2xl bg-[#1f5fe0] px-4 py-2.5'
             disabled={!myLocation}
@@ -241,7 +241,7 @@ export function MapScreen() {
         </View>
 
         {isLocating ? (
-          <View className='absolute right-3 top-28 rounded-xl bg-white px-3 py-2'>
+          <View className='absolute right-3 top-24 rounded-xl bg-white px-3 py-2'>
             <Text className='text-xs text-[#4d648a]'>Obteniendo ubicacion...</Text>
           </View>
         ) : null}

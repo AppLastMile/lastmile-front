@@ -1,4 +1,4 @@
-import { MaterialIcons } from '@expo/vector-icons';
+import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
@@ -52,7 +52,7 @@ export function CreateMissionScreen() {
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const tabsBottomOffset = Math.max(insets.bottom - 6, 6);
-  const floatingControlsTop = Math.max(insets.top + 16, 40);
+  const floatingControlsTop = Math.max(insets.top + 24, 48);
   const maxFormHeight = Math.max(
     FORM_MIN_HEIGHT,
     windowHeight - (tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS + FORM_VERTICAL_MARGIN)
@@ -452,20 +452,27 @@ export function CreateMissionScreen() {
 
       <View className='absolute right-4' style={{ top: controlsTop }}>
         <Pressable
-          className='rounded-xl px-3 py-2'
+          className='flex-row items-center gap-2 rounded-2xl bg-[#1f5fe0] px-4 py-2.5'
           disabled={!myLocation}
           onPress={centerOnMyLocation}
           style={{
-            backgroundColor: '#1f5fe0',
             opacity: myLocation ? 1 : 0.65,
+            shadowColor: '#0b327f',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.24,
+            shadowRadius: 10,
+            elevation: 8,
           }}
         >
-          <Text className='text-xs font-semibold text-white'>Mi ubicacion</Text>
+          <View className='h-6 w-6 items-center justify-center rounded-full bg-[#e7efff]'>
+            <FontAwesome5 color='#1f5fe0' name='crosshairs' size={11} />
+          </View>
+          <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicacion</Text>
         </Pressable>
       </View>
 
       {isLocating ? (
-        <View className='absolute right-4 top-52 rounded-xl bg-white px-3 py-2'>
+        <View className='absolute right-4 rounded-xl bg-white px-3 py-2' style={{ top: controlsTop + 44 }}>
           <Text className='text-xs text-[#4d648a]'>Obteniendo ubicacion...</Text>
         </View>
       ) : null}

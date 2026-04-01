@@ -4,20 +4,20 @@ import { useEffect, useRef } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type DonorTab = 'inicio' | 'campanas' | 'subastas';
+type DonorTab = 'inicio' | 'campanas' | 'subastas' | 'perfil';
 
-type DonorBottomTabsProps = {
+type DonorBottomTabsProps = Readonly<{
   activeTab: DonorTab;
-};
+}>;
 
-type DonorTabButtonProps = {
+type DonorTabButtonProps = Readonly<{
   id: DonorTab;
   label: string;
   icon: React.ComponentProps<typeof FontAwesome5>['name'];
   route: string;
   isActive: boolean;
   onPress: (route: string) => void;
-};
+}>;
 
 function DonorTabButton({ id, label, icon, route, isActive, onPress }: DonorTabButtonProps) {
   const scale = useRef(new Animated.Value(isActive ? 1 : 0.94)).current;
@@ -100,6 +100,12 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
       label: 'Subastas',
       icon: 'gavel',
       route: '/auctions',
+    },
+    {
+      id: 'perfil',
+      label: 'Perfil',
+      icon: 'user',
+      route: '/(tabs)/profile',
     },
   ];
 
