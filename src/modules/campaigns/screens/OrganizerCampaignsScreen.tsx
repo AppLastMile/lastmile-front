@@ -16,8 +16,6 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatModal';
 import {
-  AuctionMap,
-  AuctionRealtimeEvent,
   buildInventoryMap,
   ChatMessage,
   ChatMessageCreatedEvent,
@@ -30,7 +28,6 @@ import {
 import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
 import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
-import { type Auction, buyAuction, getCampaignAuctions } from '@/services/api/auctionsService';
 import { type Campaign, createCampaign, getCampaigns } from '@/services/api/campaignsService';
 import { getItemDonations, type ItemDonationResponse } from '@/services/api/donationsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
@@ -56,13 +53,10 @@ export function OrganizerCampaignsScreen() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [itemDonations, setItemDonations] = useState<ItemDonationResponse[]>([]);
-  const [auctionsByCampaign, setAuctionsByCampaign] = useState<AuctionMap>({});
 
   const [organizerBuyerId, setOrganizerBuyerId] = useState<number>(DEFAULT_CREATED_BY);
 
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [auctionFeedbackByCampaign, setAuctionFeedbackByCampaign] = useState<Record<number, string>>({});
-  const [isBuyingAuctionById, setIsBuyingAuctionById] = useState<Record<number, boolean>>({});
 
   const [campaignName, setCampaignName] = useState('');
   const [campaignDescription, setCampaignDescription] = useState('');
@@ -73,26 +67,6 @@ export function OrganizerCampaignsScreen() {
   const [chatCampaignId, setChatCampaignId] = useState<number | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatByCampaign, setChatByCampaign] = useState<Record<number, ChatMessage[]>>({});
-
-  const refreshCampaignAuctions = useCallback(async (campaignIds: number[]) => {
-    const entries = await Promise.all(
-      campaignIds.map(async (campaignId) => {
-        try {
-          const response = await getCampaignAuctions(campaignId, 'all');
-          return [campaignId, normalizeCollection<Auction>(response)] as const;
-        } catch {
-          return [campaignId, [] as Auction[]] as const;
-        }
-      })
-    );
-
-    const nextMap: AuctionMap = {};
-    entries.forEach(([campaignId, auctions]) => {
-      nextMap[campaignId] = auctions;
-    });
-
-    setAuctionsByCampaign(nextMap);
-  }, []);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -137,18 +111,12 @@ export function OrganizerCampaignsScreen() {
       setItemDonations([]);
     }
 
-    if (campaignsResult.status === 'fulfilled') {
-      await refreshCampaignAuctions(campaignsResult.value.data.map((campaign) => campaign.id));
-    } else {
-      setAuctionsByCampaign({});
-    }
-
     if (failedSources.length > 0) {
       setLoadError(`Fallo la carga de: ${failedSources.join(' | ')}`);
     }
 
     setIsLoading(false);
-  }, [refreshCampaignAuctions]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -175,11 +143,6 @@ export function OrganizerCampaignsScreen() {
   const eventsById = useMemo(
     () => new Map(events.map((eventItem) => [eventItem.id, eventItem])),
     [events]
-  );
-
-  const usersById = useMemo(
-    () => new Map(users.map((userItem) => [userItem.id, userItem])),
-    [users]
   );
 
   const inventoryByCampaign = useMemo(() => buildInventoryMap(itemDonations), [itemDonations]);
@@ -210,7 +173,6 @@ export function OrganizerCampaignsScreen() {
     const campaignIds = campaigns.map((campaign) => campaign.id);
     const rooms = campaignIds.flatMap((campaignId) => [
       `campaign:${campaignId}:chat`,
-      `campaign:${campaignId}:auctions`,
       `campaign:${campaignId}:inventory`,
     ]);
 
@@ -282,18 +244,6 @@ export function OrganizerCampaignsScreen() {
       });
     });
 
-    const handleAuctionRealtime = (event: AuctionRealtimeEvent) => {
-      if (!event?.campaignId) {
-        return;
-      }
-
-      refreshCampaignAuctions([event.campaignId]);
-    };
-
-    const offAuctionCreated = onRealtime<AuctionRealtimeEvent>('auction.created', handleAuctionRealtime);
-    const offAuctionUpdated = onRealtime<AuctionRealtimeEvent>('auction.updated', handleAuctionRealtime);
-    const offAuctionSold = onRealtime<AuctionRealtimeEvent>('auction.sold', handleAuctionRealtime);
-
     const offInventoryUpdated = onRealtime<InventoryRealtimeEvent>('campaign.inventory.updated', async (event) => {
       if (!event?.campaignId) {
         return;
@@ -309,13 +259,10 @@ export function OrganizerCampaignsScreen() {
 
     return () => {
       offChatMessageCreated();
-      offAuctionCreated();
-      offAuctionUpdated();
-      offAuctionSold();
       offInventoryUpdated();
       rooms.forEach((room) => leaveRealtimeRoom(room));
     };
-  }, [campaigns, currentUser, organizerBuyerId, refreshCampaignAuctions]);
+  }, [campaigns, currentUser, organizerBuyerId]);
 
   const canCreate = campaignName.trim().length >= 3 && Boolean(selectedEventId) && !isSubmitting;
 
@@ -360,38 +307,6 @@ export function OrganizerCampaignsScreen() {
       setFormError(`No se pudo crear la campana. ${getErrorMessage(error)}`);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleBuyAuction = async (campaignId: number, auctionId: number, auctionPrice: number) => {
-    setIsBuyingAuctionById((prev) => ({ ...prev, [auctionId]: true }));
-
-    try {
-      await buyAuction(auctionId, {
-        buyerId: organizerBuyerId,
-        idempotencyKey: `${auctionId}-${organizerBuyerId}-${Date.now()}`,
-      });
-
-      setCampaigns((prev) =>
-        prev.map((campaignItem) =>
-          campaignItem.id === campaignId
-            ? { ...campaignItem, collectedMoney: campaignItem.collectedMoney + auctionPrice }
-            : campaignItem
-        )
-      );
-
-      await refreshCampaignAuctions([campaignId]);
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: 'Compra de subasta registrada correctamente.',
-      }));
-    } catch (error) {
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: `No se pudo completar la compra. ${getErrorMessage(error)}`,
-      }));
-    } finally {
-      setIsBuyingAuctionById((prev) => ({ ...prev, [auctionId]: false }));
     }
   };
 
@@ -490,8 +405,6 @@ export function OrganizerCampaignsScreen() {
               quantity: inventory[option.key] ?? 0,
             })).filter((entry) => entry.quantity > 0);
 
-            const campaignAuctions = auctionsByCampaign[campaignItem.id] ?? [];
-
             return (
               <Animated.View
                 className='rounded-2xl border border-[#d8e6ff] bg-white p-4'
@@ -543,56 +456,6 @@ export function OrganizerCampaignsScreen() {
                     </Text>
                   )}
                 </View>
-
-                <View className='mt-3 rounded-xl bg-[#fff9ef] p-3'>
-                  <Text className='text-xs font-semibold text-[#8a5d13]'>Subastas de la campana</Text>
-                  {campaignAuctions.length === 0 ? (
-                    <Text className='mt-1 text-xs text-[#9f7a3e]'>Aun no hay subastas registradas.</Text>
-                  ) : (
-                    <View className='mt-2 gap-2'>
-                      {campaignAuctions.map((auction) => {
-                        const seller = usersById.get(auction.sellerId);
-                        const buyer = auction.buyerId ? usersById.get(auction.buyerId) : null;
-
-                        return (
-                          <View className='rounded-xl border border-[#f0d7b0] bg-white px-3 py-3' key={auction.id}>
-                            <Text className='text-sm font-bold text-[#6b4912]'>{auction.itemName}</Text>
-                            <Text className='mt-1 text-xs text-[#8d6a34]'>
-                              {auction.description || 'Sin descripcion'}
-                            </Text>
-                            <Text className='mt-1 text-xs text-[#8d6a34]'>
-                              Publicado por: {seller?.name ?? seller?.fullName ?? `Usuario ${auction.sellerId}`}
-                            </Text>
-                            <Text className='mt-1 text-sm font-extrabold text-[#b56e11]'>
-                              {formatMoney((auction.currentPrice ?? auction.initialPrice))}
-                            </Text>
-
-                            {auction.status === 'active' ? (
-                              <Pressable
-                                className='mt-2 self-start rounded-xl bg-[#d18b25] px-3 py-2'
-                                onPress={() => handleBuyAuction(campaignItem.id, auction.id, (auction.currentPrice ?? auction.initialPrice))}
-                              >
-                                <Text className='text-xs font-bold text-white'>
-                                  {isBuyingAuctionById[auction.id] ? 'Comprando...' : 'Comprar'}
-                                </Text>
-                              </Pressable>
-                            ) : (
-                              <Text className='mt-2 text-xs font-semibold text-[#1b7b45]'>
-                                Vendida a: {buyer?.name ?? buyer?.fullName ?? `Usuario ${auction.buyerId ?? '-'}`}
-                              </Text>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-
-                {auctionFeedbackByCampaign[campaignItem.id] ? (
-                  <Text className='mt-2 text-xs text-[#8d6a34]'>
-                    {auctionFeedbackByCampaign[campaignItem.id]}
-                  </Text>
-                ) : null}
               </Animated.View>
             );
           })}
