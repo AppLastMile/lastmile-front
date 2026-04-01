@@ -105,7 +105,7 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
     },
     {
       id: 'campanas',
-      label: 'Campanas',
+      label: 'Campañas',
       icon: 'bullhorn',
       route: '/organizer/campaigns',
     },
