@@ -27,6 +27,8 @@ import {
   normalizeCollection,
   PHYSICAL_DONATION_OPTIONS,
 } from '@/modules/campaigns/utils/campaignsShared';
+import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
+import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 import { type Auction, buyAuction, getCampaignAuctions } from '@/services/api/auctionsService';
 import { type Campaign, createCampaign, getCampaigns } from '@/services/api/campaignsService';
@@ -188,6 +190,11 @@ export function OrganizerCampaignsScreen() {
   );
 
   const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
+  const { notifications, unreadCount, toastMessage, markAllAsRead } = useRealtimeNotifications({
+    userId: currentUser?.id,
+    role: currentUser?.role,
+    token: currentUser?.accessToken,
+  });
 
   useEffect(() => {
     if (!currentUser) {
@@ -197,6 +204,7 @@ export function OrganizerCampaignsScreen() {
     connectRealtime({
       userId: organizerBuyerId,
       role: currentUser.role,
+      token: currentUser.accessToken,
     });
 
     const campaignIds = campaigns.map((campaign) => campaign.id);
@@ -425,6 +433,15 @@ export function OrganizerCampaignsScreen() {
   return (
     <SafeAreaView className='flex-1 bg-[#eef4ff]'>
       <View className='flex-1 px-4 pt-6'>
+        <View className='relative mb-3 flex-row justify-end'>
+          <NotificationsBell
+            notifications={notifications}
+            onMarkAllAsRead={markAllAsRead}
+            toastMessage={toastMessage}
+            unreadCount={unreadCount}
+          />
+        </View>
+
         <Pressable
           className='rounded-2xl bg-[#1f5fe0] px-5 py-4 active:opacity-90'
           onPress={handleOpenCreate}

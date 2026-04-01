@@ -5,6 +5,8 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatModal';
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
+import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
+import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
 import { type Auction, buyAuction, createCampaignAuction, getCampaignAuctions } from '@/services/api/auctionsService';
 import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
 import {
@@ -195,6 +197,11 @@ export function DonorCampaignsScreen() {
   );
 
   const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
+  const { notifications, unreadCount, toastMessage, markAllAsRead } = useRealtimeNotifications({
+    userId: currentUser?.id,
+    role: currentUser?.role,
+    token: currentUser?.accessToken,
+  });
 
   useEffect(() => {
     if (!currentUser) {
@@ -204,6 +211,7 @@ export function DonorCampaignsScreen() {
     connectRealtime({
       userId: donorId,
       role: currentUser.role,
+      token: currentUser.accessToken,
     });
 
     const campaignIds = campaigns.map((campaign) => campaign.id);
@@ -524,16 +532,24 @@ export function DonorCampaignsScreen() {
   return (
     <View className='flex-1 bg-[#eef4ff]'>
       <View className='flex-1 px-4 pt-14'>
-        <Text className='text-2xl font-extrabold text-[#16325d]'>Campanas Activas</Text>
+        <Text className='text-2xl font-extrabold text-[#16325d]'>Campañas Activas</Text>
         <Text className='mt-1 text-sm text-[#4d648a]'>
-          Campanas creadas por organizadores para apoyar las misiones.
+          Campañas creadas por organizadores para apoyar las misiones.
         </Text>
 
         <View className='mt-3 flex-row items-center justify-between'>
           <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
-          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadData}>
-            <Text className='font-semibold text-white'>Recargar</Text>
-          </Pressable>
+          <View className='relative flex-row items-center gap-2'>
+            <NotificationsBell
+              notifications={notifications}
+              onMarkAllAsRead={markAllAsRead}
+              toastMessage={toastMessage}
+              unreadCount={unreadCount}
+            />
+            <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadData}>
+              <Text className='font-semibold text-white'>Recargar</Text>
+            </Pressable>
+          </View>
         </View>
 
         {isLoading ? (
@@ -814,7 +830,7 @@ export function DonorCampaignsScreen() {
           })}
 
           {!isLoading && !loadError && campaigns.length === 0 ? (
-            <Text className='text-sm text-[#5d7498]'>Aun no hay campanas publicadas.</Text>
+            <Text className='text-sm text-[#5d7498]'>Aun no hay campañas publicadas.</Text>
           ) : null}
         </ScrollView>
       </View>
