@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatModal';
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
-import { type Auction, buyAuction, createCampaignAuction, getCampaignAuctions } from '@/services/api/auctionsService';
+import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
+import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
 import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
 import {
   createItemDonation,
@@ -15,8 +18,6 @@ import {
 } from '@/services/api/donationsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 import {
-  AuctionMap,
-  AuctionRealtimeEvent,
   buildInventoryMap,
   ChatMessage,
   ChatMessageCreatedEvent,
@@ -59,7 +60,6 @@ export function DonorCampaignsScreen() {
   const [donorId, setDonorId] = useState<number>(DEFAULT_DONOR_ID);
 
   const [itemDonations, setItemDonations] = useState<ItemDonationResponse[]>([]);
-  const [auctionsByCampaign, setAuctionsByCampaign] = useState<AuctionMap>({});
 
   const [moneyDraftByCampaign, setMoneyDraftByCampaign] = useState<Record<number, string>>({});
   const [donationFeedbackByCampaign, setDonationFeedbackByCampaign] = useState<Record<number, string>>({});
@@ -70,36 +70,9 @@ export function DonorCampaignsScreen() {
   const [isPhysicalDropdownOpenByCampaign, setIsPhysicalDropdownOpenByCampaign] = useState<Record<number, boolean>>({});
   const [isDonatingItemsByCampaign, setIsDonatingItemsByCampaign] = useState<Record<number, boolean>>({});
 
-  const [auctionItemDraftByCampaign, setAuctionItemDraftByCampaign] = useState<Record<number, string>>({});
-  const [auctionDescriptionDraftByCampaign, setAuctionDescriptionDraftByCampaign] = useState<Record<number, string>>({});
-  const [auctionPriceDraftByCampaign, setAuctionPriceDraftByCampaign] = useState<Record<number, string>>({});
-  const [auctionFeedbackByCampaign, setAuctionFeedbackByCampaign] = useState<Record<number, string>>({});
-  const [isCreatingAuctionByCampaign, setIsCreatingAuctionByCampaign] = useState<Record<number, boolean>>({});
-  const [isBuyingAuctionById, setIsBuyingAuctionById] = useState<Record<number, boolean>>({});
-
   const [chatCampaignId, setChatCampaignId] = useState<number | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatByCampaign, setChatByCampaign] = useState<Record<number, ChatMessage[]>>({});
-
-  const refreshCampaignAuctions = useCallback(async (campaignIds: number[]) => {
-    const entries = await Promise.all(
-      campaignIds.map(async (campaignId) => {
-        try {
-          const response = await getCampaignAuctions(campaignId, 'all');
-          return [campaignId, normalizeCollection<Auction>(response)] as const;
-        } catch {
-          return [campaignId, [] as Auction[]] as const;
-        }
-      })
-    );
-
-    const nextMap: AuctionMap = {};
-    entries.forEach(([campaignId, auctions]) => {
-      nextMap[campaignId] = auctions;
-    });
-
-    setAuctionsByCampaign(nextMap);
-  }, []);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -108,8 +81,8 @@ export function DonorCampaignsScreen() {
     const [campaignsResult, eventsResult, usersResult, itemsResult] = await Promise.allSettled([
       getCampaigns(),
       getEvents({ page: 1, limit: 100 }),
-      getUsers(1, 200),
-      getItemDonations(1, 500),
+      getUsers(1, 100),
+      getItemDonations(1, 100),
     ]);
 
     const failedSources: string[] = [];
@@ -142,18 +115,12 @@ export function DonorCampaignsScreen() {
       setItemDonations([]);
     }
 
-    if (campaignsResult.status === 'fulfilled') {
-      await refreshCampaignAuctions(campaignsResult.value.data.map((campaign) => campaign.id));
-    } else {
-      setAuctionsByCampaign({});
-    }
-
     if (failedSources.length > 0) {
       setLoadError(`Fallo la carga de: ${failedSources.join(' | ')}`);
     }
 
     setIsLoading(false);
-  }, [refreshCampaignAuctions]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -182,11 +149,6 @@ export function DonorCampaignsScreen() {
     [events]
   );
 
-  const usersById = useMemo(
-    () => new Map(users.map((userItem) => [userItem.id, userItem])),
-    [users]
-  );
-
   const inventoryByCampaign = useMemo(() => buildInventoryMap(itemDonations), [itemDonations]);
 
   const chatCampaign = useMemo(
@@ -195,6 +157,11 @@ export function DonorCampaignsScreen() {
   );
 
   const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
+  const { notifications, unreadCount, toastMessage, markAllAsRead } = useRealtimeNotifications({
+    userId: currentUser?.id,
+    role: currentUser?.role,
+    token: currentUser?.accessToken,
+  });
 
   useEffect(() => {
     if (!currentUser) {
@@ -204,12 +171,12 @@ export function DonorCampaignsScreen() {
     connectRealtime({
       userId: donorId,
       role: currentUser.role,
+      token: currentUser.accessToken,
     });
 
     const campaignIds = campaigns.map((campaign) => campaign.id);
     const rooms = campaignIds.flatMap((campaignId) => [
       `campaign:${campaignId}:chat`,
-      `campaign:${campaignId}:auctions`,
       `campaign:${campaignId}:inventory`,
     ]);
 
@@ -281,25 +248,13 @@ export function DonorCampaignsScreen() {
       });
     });
 
-    const handleAuctionRealtime = (event: AuctionRealtimeEvent) => {
-      if (!event?.campaignId) {
-        return;
-      }
-
-      refreshCampaignAuctions([event.campaignId]);
-    };
-
-    const offAuctionCreated = onRealtime<AuctionRealtimeEvent>('auction.created', handleAuctionRealtime);
-    const offAuctionUpdated = onRealtime<AuctionRealtimeEvent>('auction.updated', handleAuctionRealtime);
-    const offAuctionSold = onRealtime<AuctionRealtimeEvent>('auction.sold', handleAuctionRealtime);
-
     const offInventoryUpdated = onRealtime<InventoryRealtimeEvent>('campaign.inventory.updated', async (event) => {
       if (!event?.campaignId) {
         return;
       }
 
       try {
-        const itemsResponse = await getItemDonations(1, 500);
+        const itemsResponse = await getItemDonations(1, 100);
         setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResponse));
       } catch {
         // Keep last snapshot if refresh fails.
@@ -308,13 +263,10 @@ export function DonorCampaignsScreen() {
 
     return () => {
       offChatMessageCreated();
-      offAuctionCreated();
-      offAuctionUpdated();
-      offAuctionSold();
       offInventoryUpdated();
       rooms.forEach((room) => leaveRealtimeRoom(room));
     };
-  }, [campaigns, currentUser, donorId, refreshCampaignAuctions]);
+  }, [campaigns, currentUser, donorId]);
 
   const handleDonateMoney = async (campaign: Campaign) => {
     const value = Number((moneyDraftByCampaign[campaign.id] ?? '').replaceAll(/\D/g, ''));
@@ -404,88 +356,6 @@ export function DonorCampaignsScreen() {
     }
   };
 
-  const handleCreateAuction = async (campaignId: number) => {
-    const itemName = (auctionItemDraftByCampaign[campaignId] ?? '').trim();
-    const description = (auctionDescriptionDraftByCampaign[campaignId] ?? '').trim();
-    const price = Number((auctionPriceDraftByCampaign[campaignId] ?? '').replaceAll(/\D/g, ''));
-
-    if (itemName.length < 2) {
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: 'Define un articulo para subastar.',
-      }));
-      return;
-    }
-
-    if (!price || price <= 0) {
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: 'Ingresa un valor valido para la subasta.',
-      }));
-      return;
-    }
-
-    setIsCreatingAuctionByCampaign((prev) => ({ ...prev, [campaignId]: true }));
-
-    try {
-      await createCampaignAuction(campaignId, {
-        sellerId: donorId,
-        itemName,
-        description,
-        price,
-        currency: 'COP',
-      });
-
-      await refreshCampaignAuctions([campaignId]);
-      setAuctionItemDraftByCampaign((prev) => ({ ...prev, [campaignId]: '' }));
-      setAuctionDescriptionDraftByCampaign((prev) => ({ ...prev, [campaignId]: '' }));
-      setAuctionPriceDraftByCampaign((prev) => ({ ...prev, [campaignId]: '' }));
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: 'Subasta creada y visible para todos los usuarios.',
-      }));
-    } catch (error) {
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: `No se pudo crear la subasta. ${getErrorMessage(error)}`,
-      }));
-    } finally {
-      setIsCreatingAuctionByCampaign((prev) => ({ ...prev, [campaignId]: false }));
-    }
-  };
-
-  const handleBuyAuction = async (campaignId: number, auctionId: number, auctionPrice: number) => {
-    setIsBuyingAuctionById((prev) => ({ ...prev, [auctionId]: true }));
-
-    try {
-      await buyAuction(auctionId, {
-        buyerId: donorId,
-        idempotencyKey: `${auctionId}-${donorId}-${Date.now()}`,
-      });
-
-      setCampaigns((prev) =>
-        prev.map((campaignItem) =>
-          campaignItem.id === campaignId
-            ? { ...campaignItem, collectedMoney: campaignItem.collectedMoney + auctionPrice }
-            : campaignItem
-        )
-      );
-
-      await refreshCampaignAuctions([campaignId]);
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: 'Compra registrada correctamente.',
-      }));
-    } catch (error) {
-      setAuctionFeedbackByCampaign((prev) => ({
-        ...prev,
-        [campaignId]: `No se pudo completar la compra. ${getErrorMessage(error)}`,
-      }));
-    } finally {
-      setIsBuyingAuctionById((prev) => ({ ...prev, [auctionId]: false }));
-    }
-  };
-
   const openChat = (campaignId: number) => {
     setChatCampaignId(campaignId);
     setChatDraft('');
@@ -522,11 +392,36 @@ export function DonorCampaignsScreen() {
   };
 
   return (
-    <View className='flex-1 bg-[#eef4ff]'>
-      <View className='flex-1 px-4 pt-6'>
-        <Text className='text-2xl font-extrabold text-[#16325d]'>Campanas Activas</Text>
+    <SafeAreaView className='flex-1 bg-[#eef4ff]' edges={['top']}>
+      <View className='flex-1 px-4 pt-4'>
+        <View className='mb-1 flex-row items-center justify-between'>
+          <View className='flex-row items-center'>
+            <View
+              style={{
+                backgroundColor: '#dce8ff',
+                borderRadius: 16,
+                padding: 12,
+                marginRight: 12,
+              }}
+            >
+              <FontAwesome5 color='#1e73fa' name='bullhorn' size={22} />
+            </View>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Campañas</Text>
+          </View>
+
+          <View className='relative'>
+            <NotificationsBell
+              notifications={notifications}
+              onMarkAllAsRead={markAllAsRead}
+              toastMessage={toastMessage}
+              unreadCount={unreadCount}
+            />
+          </View>
+        </View>
+
+        <Text className='text-2xl font-extrabold text-[#16325d]'>Campañas Activas</Text>
         <Text className='mt-1 text-sm text-[#4d648a]'>
-          Campanas creadas por organizadores para apoyar las misiones.
+          Campañas creadas por organizadores para apoyar las misiones.
         </Text>
 
         <View className='mt-3 flex-row items-center justify-between'>
@@ -552,7 +447,6 @@ export function DonorCampaignsScreen() {
           {campaigns.map((campaignItem, index) => {
             const eventInfo = eventsById.get(campaignItem.eventId);
             const progress = getProgressValue(campaignItem);
-            const campaignAuctions = auctionsByCampaign[campaignItem.id] ?? [];
             const inventory = inventoryByCampaign[campaignItem.id] ?? {};
             const physicalInventorySummary = PHYSICAL_DONATION_OPTIONS.map((option) => ({
               label: option.label,
@@ -717,104 +611,12 @@ export function DonorCampaignsScreen() {
                     </Text>
                   )}
                 </View>
-
-                <View className='mt-3 rounded-xl bg-[#fff6e8] p-3'>
-                  <Text className='text-xs font-semibold text-[#8a5d13]'>Crear subasta solidaria</Text>
-                  <TextInput
-                    className='mt-2 rounded-xl border border-[#f0d7b0] bg-white px-3 py-2 text-[#5f430f]'
-                    onChangeText={(value) =>
-                      setAuctionItemDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                    }
-                    placeholder='Articulo (ej. Nevera)'
-                    placeholderTextColor='#b89054'
-                    value={auctionItemDraftByCampaign[campaignItem.id] ?? ''}
-                  />
-                  <TextInput
-                    className='mt-2 rounded-xl border border-[#f0d7b0] bg-white px-3 py-2 text-[#5f430f]'
-                    onChangeText={(value) =>
-                      setAuctionDescriptionDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                    }
-                    placeholder='Descripcion de la subasta'
-                    placeholderTextColor='#b89054'
-                    value={auctionDescriptionDraftByCampaign[campaignItem.id] ?? ''}
-                  />
-                  <View className='mt-2 flex-row items-center gap-2'>
-                    <TextInput
-                      className='flex-1 rounded-xl border border-[#f0d7b0] bg-white px-3 py-2 text-[#5f430f]'
-                      keyboardType='number-pad'
-                      onChangeText={(value) =>
-                        setAuctionPriceDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                      }
-                      placeholder='Valor de compra (COP)'
-                      placeholderTextColor='#b89054'
-                      value={auctionPriceDraftByCampaign[campaignItem.id] ?? ''}
-                    />
-                    <Pressable
-                      className='rounded-xl bg-[#d18b25] px-3 py-2'
-                      onPress={() => handleCreateAuction(campaignItem.id)}
-                    >
-                      <Text className='text-xs font-bold text-white'>
-                        {isCreatingAuctionByCampaign[campaignItem.id] ? 'Creando...' : 'Crear subasta'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                <View className='mt-3 rounded-xl bg-[#fff9ef] p-3'>
-                  <Text className='text-xs font-semibold text-[#8a5d13]'>Subastas activas</Text>
-                  {campaignAuctions.length === 0 ? (
-                    <Text className='mt-1 text-xs text-[#9f7a3e]'>Aun no hay subastas en esta campana.</Text>
-                  ) : (
-                    <View className='mt-2 gap-2'>
-                      {campaignAuctions.map((auction) => {
-                        const seller = auction.sellerId ? usersById.get(auction.sellerId) : null;
-                        const buyer = auction.buyerId ? usersById.get(auction.buyerId) : null;
-
-                        return (
-                          <View className='rounded-xl border border-[#f0d7b0] bg-white px-3 py-3' key={auction.id}>
-                            <Text className='text-sm font-bold text-[#6b4912]'>{auction.itemName}</Text>
-                            <Text className='mt-1 text-xs text-[#8d6a34]'>
-                              {auction.description || 'Sin descripcion'}
-                            </Text>
-                            <Text className='mt-1 text-xs text-[#8d6a34]'>
-                              Publicado por: {seller?.name ?? seller?.fullName ?? `Usuario ${auction.sellerId}`}
-                            </Text>
-                            <Text className='mt-1 text-sm font-extrabold text-[#b56e11]'>
-                              {formatMoney((auction.currentPrice ?? auction.initialPrice))}
-                            </Text>
-
-                            {auction.status === 'active' ? (
-                              <Pressable
-                                className='mt-2 self-start rounded-xl bg-[#d18b25] px-3 py-2'
-                                onPress={() => handleBuyAuction(campaignItem.id, auction.id, (auction.currentPrice ?? auction.initialPrice))}
-                              >
-                                <Text className='text-xs font-bold text-white'>
-                                  {isBuyingAuctionById[auction.id] ? 'Comprando...' : 'Comprar'}
-                                </Text>
-                              </Pressable>
-                            ) : (
-                              <Text className='mt-2 text-xs font-semibold text-[#1b7b45]'>
-                                Vendida a: {buyer?.name ?? buyer?.fullName ?? `Usuario ${auction.buyerId ?? '-'}`}
-                              </Text>
-                            )}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-
-                {auctionFeedbackByCampaign[campaignItem.id] ? (
-                  <Text className='mt-2 text-xs text-[#8d6a34]'>
-                    {auctionFeedbackByCampaign[campaignItem.id]}
-                  </Text>
-                ) : null}
               </Animated.View>
             );
           })}
 
           {!isLoading && !loadError && campaigns.length === 0 ? (
-            <Text className='text-sm text-[#5d7498]'>Aun no hay campanas publicadas.</Text>
+            <Text className='text-sm text-[#5d7498]'>Aun no hay campañas publicadas.</Text>
           ) : null}
         </ScrollView>
       </View>
@@ -830,6 +632,6 @@ export function DonorCampaignsScreen() {
       />
 
       {currentUser?.role === 'donor' ? <DonorBottomTabs activeTab='campanas' /> : null}
-    </View>
+    </SafeAreaView>
   );
 }

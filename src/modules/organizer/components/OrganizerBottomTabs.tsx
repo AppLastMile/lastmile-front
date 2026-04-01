@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type OrganizerTab = 'inicio' | 'campanas' | 'subastas' | 'logistica';
+type OrganizerTab = 'inicio' | 'campanas' | 'subastas' | 'logistica' | 'perfil';
 
 type OrganizerBottomTabsProps = Readonly<{
   activeTab: OrganizerTab;
@@ -105,7 +105,7 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
     },
     {
       id: 'campanas',
-      label: 'Campanas',
+      label: 'Campañas',
       icon: 'bullhorn',
       route: '/organizer/campaigns',
     },
@@ -120,6 +120,12 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
       label: 'Logistica',
       icon: 'truck',
       route: '/organizer/logistics',
+    },
+    {
+      id: 'perfil',
+      label: 'Perfil',
+      icon: 'user',
+      route: '/organizer/profile',
     },
   ];
 

@@ -10,9 +10,5 @@ export default function ProfileRoute() {
 		return <Redirect href='/(auth)/login' />;
 	}
 
-	if (currentUser.role === 'donor') {
-		return <Redirect href='/(tabs)/map' />;
-	}
-
 	return <ProfileScreen />;
 }

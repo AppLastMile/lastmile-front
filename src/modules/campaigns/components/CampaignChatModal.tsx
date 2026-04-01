@@ -31,15 +31,15 @@ export function CampaignChatModal({
   onClose,
 }: CampaignChatModalProps) {
   return (
-    <Modal animationType='slide' visible={visible}>
-      <View className='flex-1 bg-[#f4f8ff]'>
-        <View className='flex-row items-center px-4 py-3'>
+    <Modal animationType='slide' onRequestClose={onClose} visible={visible}>
+      <View className='flex-1 bg-[#f4f8ff] pt-12'>
+        <View className='flex-row items-center justify-between px-4 py-3'>
+          <Text className='flex-1 text-base font-extrabold text-[#19335b]'>
+            Chat {campaignName ? `- ${campaignName}` : ''}
+          </Text>
           <Pressable className='h-10 w-10 items-center justify-center rounded-full bg-white' onPress={onClose}>
             <Text className='text-base font-bold text-[#1f4fb6]'>X</Text>
           </Pressable>
-          <Text className='ml-3 flex-1 text-base font-extrabold text-[#19335b]'>
-            Chat {campaignName ? `- ${campaignName}` : ''}
-          </Text>
         </View>
 
         <ScrollView className='flex-1 px-4' contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>
@@ -59,6 +59,9 @@ export function CampaignChatModal({
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View className='flex-row items-center gap-2 border-t border-[#dce6fb] bg-white px-4 py-3'>
+            <Pressable className='rounded-lg bg-[#f0f4fb] px-2 py-2' onPress={onClose}>
+              <Text className='text-xs font-semibold text-[#1f4fb6]'>Volver</Text>
+            </Pressable>
             <TextInput
               className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
               onChangeText={onChangeDraft}

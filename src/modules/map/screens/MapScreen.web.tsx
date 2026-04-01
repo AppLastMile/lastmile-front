@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -21,6 +22,7 @@ const COLOMBIA_CENTER: [number, number] = [4.5709, -74.2973];
 export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
+  const [showDonorWelcome, setShowDonorWelcome] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +76,22 @@ export function MapScreen() {
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  useEffect(() => {
+    if (!isDonor) {
+      return;
+    }
+
+    setShowDonorWelcome(true);
+
+    const timeoutId = setTimeout(() => {
+      setShowDonorWelcome(false);
+    }, 3000);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [isDonor]);
 
   useEffect(() => {
     if (!navigator?.geolocation) {
@@ -153,8 +171,22 @@ export function MapScreen() {
           ) : null}
         </MapContainer>
 
+        {isDonor && showDonorWelcome ? (
+          <View className='absolute left-3 right-3 top-3 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'>
+            <View className='flex-row items-center'>
+              <View className='h-8 w-8 items-center justify-center rounded-full bg-[#eaf1ff]'>
+                <MaterialIcons color='#1f5fe0' name='volunteer-activism' size={18} />
+              </View>
+              <View className='ml-3 flex-1'>
+                <Text className='text-sm font-bold text-[#16325d]'>Bienvenido Donante</Text>
+                <Text className='text-xs text-[#5b7190]'>Apoya campanas activas desde el mapa y sigue tus aportes.</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         {isLoading ? (
-          <View className='absolute left-0 right-0 top-3 items-center'>
+          <View className='absolute left-0 right-0 items-center' style={{ top: isDonor && showDonorWelcome ? 86 : 12 }}>
             <View className='rounded-full bg-white px-4 py-2'>
               <ActivityIndicator color='#1f5fe0' size='small' />
             </View>
@@ -162,7 +194,7 @@ export function MapScreen() {
         ) : null}
 
         {error ? (
-          <View className='absolute left-3 right-3 top-3 rounded-xl bg-[#ffecef] px-3 py-2'>
+          <View className='absolute left-3 right-3 rounded-xl bg-[#ffecef] px-3 py-2' style={{ top: isDonor && showDonorWelcome ? 86 : 12 }}>
             <Text className='text-sm text-[#a1263d]'>{error}</Text>
           </View>
         ) : null}

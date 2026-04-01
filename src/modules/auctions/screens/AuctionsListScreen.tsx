@@ -317,7 +317,9 @@ export function AuctionsListScreen() {
                     textAlign: 'center',
                   }}
                 >
-                  Presiona "+" para crear la primera subasta.
+                  {isOrganizer
+                    ? 'Presiona "+" para crear la primera subasta.'
+                    : 'Espera que el organizador registre una nueva campaña.'}
                 </Text>
               </View>
             ) : (
