@@ -1,6 +1,6 @@
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -81,6 +81,18 @@ function getErrorMessage(error: unknown): string {
   }
 }
 
+function formatCountdown(seconds: number): string {
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 function formatPrice(price: number | null, currency: string): string {
   if (price === null) return '–';
   return `${currency} ${price.toLocaleString('es-CO')}`;
@@ -139,6 +151,9 @@ export function AuctionDetailScreen() {
   const [bidAmount, setBidAmount] = useState('');
   const [isBidding, setIsBidding] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
+
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const closedRef = useRef(false);
 
   const loadAuction = useCallback(async () => {
     setIsLoading(true);
@@ -202,6 +217,7 @@ export function AuctionDetailScreen() {
     const offAuctionClosed = onRealtime<AuctionClosedEvent>('auction.closed', (event) => {
       if (event.auctionId !== auctionId) return;
 
+      closedRef.current = true;
       setAuction((prev) =>
         prev
           ? {
@@ -220,6 +236,33 @@ export function AuctionDetailScreen() {
       leaveRealtimeRoom(room);
     };
   }, [auction?.status, auctionId, currentUser, loadBids]);
+
+  // Countdown timer — runs only while auction is active and endAt is set
+  useEffect(() => {
+    if (auction?.status !== 'active' || !auction.endAt) {
+      setSecondsLeft(null);
+      return;
+    }
+
+    closedRef.current = false;
+    const endTime = new Date(auction.endAt).getTime();
+    const computeRemaining = () => Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+
+    setSecondsLeft(computeRemaining());
+
+    const interval = setInterval(() => {
+      const remaining = computeRemaining();
+      setSecondsLeft(remaining);
+
+      if (remaining === 0 && !closedRef.current) {
+        closedRef.current = true;
+        clearInterval(interval);
+        setAuction((prev) => (prev ? { ...prev, status: 'closed' } : prev));
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [auction?.status, auction?.endAt]);
 
   const handleStart = async () => {
     setIsStarting(true);
@@ -391,6 +434,33 @@ export function AuctionDetailScreen() {
                   </Text>
                 </View>
               </View>
+
+              {auction.status === 'active' && secondsLeft !== null ? (
+                <View
+                  style={{
+                    backgroundColor: secondsLeft <= 60 ? '#fff1f1' : '#f0f7ff',
+                    borderRadius: 16,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    marginBottom: 14,
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#6b7280', marginBottom: 4 }}>
+                    Tiempo restante
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 36,
+                      fontWeight: '900',
+                      letterSpacing: 2,
+                      color: secondsLeft <= 60 ? '#ef4444' : '#1e73fa',
+                    }}
+                  >
+                    {formatCountdown(secondsLeft)}
+                  </Text>
+                </View>
+              ) : null}
 
               {auction.description ? (
                 <Text style={{ fontSize: 14, color: '#6b7280', marginBottom: 12 }}>
