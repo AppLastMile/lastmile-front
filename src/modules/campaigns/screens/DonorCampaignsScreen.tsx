@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatModal';
@@ -79,8 +81,8 @@ export function DonorCampaignsScreen() {
     const [campaignsResult, eventsResult, usersResult, itemsResult] = await Promise.allSettled([
       getCampaigns(),
       getEvents({ page: 1, limit: 100 }),
-      getUsers(1, 200),
-      getItemDonations(1, 500),
+      getUsers(1, 100),
+      getItemDonations(1, 100),
     ]);
 
     const failedSources: string[] = [];
@@ -252,7 +254,7 @@ export function DonorCampaignsScreen() {
       }
 
       try {
-        const itemsResponse = await getItemDonations(1, 500);
+        const itemsResponse = await getItemDonations(1, 100);
         setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResponse));
       } catch {
         // Keep last snapshot if refresh fails.
@@ -390,8 +392,33 @@ export function DonorCampaignsScreen() {
   };
 
   return (
-    <View className='flex-1 bg-[#eef4ff]'>
-      <View className='flex-1 px-4 pt-14'>
+    <SafeAreaView className='flex-1 bg-[#eef4ff]' edges={['top']}>
+      <View className='flex-1 px-4 pt-4'>
+        <View className='mb-1 flex-row items-center justify-between'>
+          <View className='flex-row items-center'>
+            <View
+              style={{
+                backgroundColor: '#dce8ff',
+                borderRadius: 16,
+                padding: 12,
+                marginRight: 12,
+              }}
+            >
+              <FontAwesome5 color='#1e73fa' name='bullhorn' size={22} />
+            </View>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Campañas</Text>
+          </View>
+
+          <View className='relative'>
+            <NotificationsBell
+              notifications={notifications}
+              onMarkAllAsRead={markAllAsRead}
+              toastMessage={toastMessage}
+              unreadCount={unreadCount}
+            />
+          </View>
+        </View>
+
         <Text className='text-2xl font-extrabold text-[#16325d]'>Campañas Activas</Text>
         <Text className='mt-1 text-sm text-[#4d648a]'>
           Campañas creadas por organizadores para apoyar las misiones.
@@ -399,17 +426,9 @@ export function DonorCampaignsScreen() {
 
         <View className='mt-3 flex-row items-center justify-between'>
           <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
-          <View className='relative flex-row items-center gap-2'>
-            <NotificationsBell
-              notifications={notifications}
-              onMarkAllAsRead={markAllAsRead}
-              toastMessage={toastMessage}
-              unreadCount={unreadCount}
-            />
-            <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadData}>
-              <Text className='font-semibold text-white'>Recargar</Text>
-            </Pressable>
-          </View>
+          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadData}>
+            <Text className='font-semibold text-white'>Recargar</Text>
+          </Pressable>
         </View>
 
         {isLoading ? (
@@ -613,6 +632,6 @@ export function DonorCampaignsScreen() {
       />
 
       {currentUser?.role === 'donor' ? <DonorBottomTabs activeTab='campanas' /> : null}
-    </View>
+    </SafeAreaView>
   );
 }

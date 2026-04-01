@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FontAwesome5 } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -75,8 +76,8 @@ export function OrganizerCampaignsScreen() {
     const [eventsResult, campaignsResult, usersResult, itemsResult] = await Promise.allSettled([
       getEvents(),
       getCampaigns(),
-      getUsers(1, 200),
-      getItemDonations(1, 500),
+      getUsers(1, 100),
+      getItemDonations(1, 100),
     ]);
 
     const failedSources: string[] = [];
@@ -250,7 +251,7 @@ export function OrganizerCampaignsScreen() {
       }
 
       try {
-        const itemsResponse = await getItemDonations(1, 500);
+        const itemsResponse = await getItemDonations(1, 100);
         setItemDonations(normalizeCollection<ItemDonationResponse>(itemsResponse));
       } catch {
         // Keep last snapshot if refresh fails.
@@ -347,18 +348,46 @@ export function OrganizerCampaignsScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eef4ff]'>
-      <View className='flex-1 px-4 pt-6'>
-        <View className='relative mb-3 flex-row justify-end'>
-          <NotificationsBell
-            notifications={notifications}
-            onMarkAllAsRead={markAllAsRead}
-            toastMessage={toastMessage}
-            unreadCount={unreadCount}
-          />
+      <View className='flex-1 px-4 pt-4'>
+        <View className='mb-1 flex-row items-center justify-between'>
+          <View className='flex-row items-center'>
+            <View
+              style={{
+                backgroundColor: '#dce8ff',
+                borderRadius: 16,
+                padding: 12,
+                marginRight: 12,
+              }}
+            >
+              <FontAwesome5 color='#1e73fa' name='bullhorn' size={22} />
+            </View>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Campañas</Text>
+          </View>
+
+          <View className='relative'>
+            <NotificationsBell
+              notifications={notifications}
+              onMarkAllAsRead={markAllAsRead}
+              toastMessage={toastMessage}
+              unreadCount={unreadCount}
+            />
+          </View>
+        </View>
+
+        <Text className='text-2xl font-extrabold text-[#16325d]'>Campañas Activas</Text>
+        <Text className='mt-1 text-sm text-[#4d648a]'>
+          Campañas creadas por organizadores para apoyar las misiones.
+        </Text>
+
+        <View className='mt-3 flex-row items-center justify-between'>
+          <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
+          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadData}>
+            <Text className='font-semibold text-white'>Recargar</Text>
+          </Pressable>
         </View>
 
         <Pressable
-          className='rounded-2xl bg-[#1f5fe0] px-5 py-4 active:opacity-90'
+          className='mt-3 rounded-2xl bg-[#1f5fe0] px-5 py-4 active:opacity-90'
           onPress={handleOpenCreate}
           style={{
             shadowColor: '#1f5fe0',
