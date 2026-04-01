@@ -427,7 +427,7 @@ export function OrganizerLogisticsScreen() {
             <View style={{ backgroundColor: '#dce8ff', borderRadius: 16, padding: 12, marginRight: 12 }}>
               <FontAwesome5 color='#1e73fa' name='truck' size={22} />
             </View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>LastMile</Text>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Logística</Text>
           </View>
           <Pressable style={{ backgroundColor: '#ebebeb', borderRadius: 16, padding: 12 }}>
             <FontAwesome5 color='#555' name='bell' size={20} />
