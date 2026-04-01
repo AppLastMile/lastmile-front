@@ -1,4 +1,4 @@
-import { httpClient } from './httpClient';
+import { httpClient } from "./httpClient";
 
 export type ShipmentLocationPoint = {
   shipmentId: number;
@@ -24,30 +24,37 @@ type ShipmentLocationPointApi = {
 
 function normalizePoint(
   payload: ShipmentLocationPointApi,
-  shipmentIdFallback: number
+  shipmentIdFallback: number,
 ): ShipmentLocationPoint | null {
   const lat = payload.lat ?? payload.latitude;
   const lng = payload.lng ?? payload.longitude;
 
-  if (typeof lat !== 'number' || Number.isNaN(lat) || typeof lng !== 'number' || Number.isNaN(lng)) {
+  if (
+    typeof lat !== "number" ||
+    Number.isNaN(lat) ||
+    typeof lng !== "number" ||
+    Number.isNaN(lng)
+  ) {
     return null;
   }
 
-  const shipmentId = payload.shipmentId ?? payload.shipment_id ?? shipmentIdFallback;
+  const shipmentId =
+    payload.shipmentId ?? payload.shipment_id ?? shipmentIdFallback;
 
   return {
     shipmentId,
     lat,
     lng,
-    speed: typeof payload.speed === 'number' ? payload.speed : undefined,
-    heading: typeof payload.heading === 'number' ? payload.heading : undefined,
-    recordedAt: payload.recordedAt ?? payload.recorded_at ?? new Date().toISOString(),
+    speed: typeof payload.speed === "number" ? payload.speed : undefined,
+    heading: typeof payload.heading === "number" ? payload.heading : undefined,
+    recordedAt:
+      payload.recordedAt ?? payload.recorded_at ?? new Date().toISOString(),
   } as ShipmentLocationPoint;
 }
 
 export async function getShipmentLatestLocation(shipmentId: number) {
   const response = await httpClient<ShipmentLocationPointApi | null>(
-    `/logistics/shipments/${shipmentId}/location/latest`
+    `/logistics/shipments/${shipmentId}/location/latest`,
   );
 
   if (!response) {
@@ -57,15 +64,19 @@ export async function getShipmentLatestLocation(shipmentId: number) {
   return normalizePoint(response, shipmentId);
 }
 
-export async function getShipmentLocationHistory(shipmentId: number, limit = 100, before?: string) {
+export async function getShipmentLocationHistory(
+  shipmentId: number,
+  limit = 100,
+  before?: string,
+) {
   const query = new URLSearchParams({ limit: String(limit) });
 
   if (before) {
-    query.set('before', before);
+    query.set("before", before);
   }
 
   const response = await httpClient<ShipmentLocationPointApi[]>(
-    `/logistics/shipments/${shipmentId}/location/history?${query.toString()}`
+    `/logistics/shipments/${shipmentId}/location/history?${query.toString()}`,
   );
 
   const points: ShipmentLocationPoint[] = [];

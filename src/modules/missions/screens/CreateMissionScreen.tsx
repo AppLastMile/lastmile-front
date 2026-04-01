@@ -1,7 +1,7 @@
-import { MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Location from 'expo-location';
+import { MaterialIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Location from "expo-location";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,24 +13,34 @@ import {
   TextInput,
   useWindowDimensions,
   View,
-} from 'react-native';
-import MapView, { Marker, UrlTile, type Region } from 'react-native-maps';
-import Animated, { FadeInDown, FadeInUp, Layout } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+} from "react-native";
+import MapView, { Marker, UrlTile, type Region } from "react-native-maps";
+import Animated, {
+  FadeInDown,
+  FadeInUp,
+  Layout,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   COLOMBIAN_CITIES,
   type ColombianCity,
   findColombianCityByName,
-} from '@/modules/missions/constants/colombianCities';
-import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
+} from "@/modules/missions/constants/colombianCities";
+import { OrganizerBottomTabs } from "@/modules/organizer/components/OrganizerBottomTabs";
 import {
   createEvent,
   type EventSummary,
   getEvents,
-} from '@/services/api/eventsService';
-import { getPickupPoints, type PickupPoint } from '@/services/api/logisticsService';
-import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
+} from "@/services/api/eventsService";
+import {
+  getPickupPoints,
+  type PickupPoint,
+} from "@/services/api/logisticsService";
+import {
+  getRememberedPickupPoints,
+  rememberPickupPoints,
+} from "@/services/state/pickupPointsMemory";
 
 const COLOMBIA_REGION: Region = {
   latitude: 4.5709,
@@ -44,7 +54,7 @@ const ORGANIZER_TABS_HEIGHT = 72;
 const FORM_MIN_HEIGHT = 380;
 const FORM_VERTICAL_MARGIN = 110;
 const DEFAULT_CREATED_BY = 1;
-const DEFAULT_DISASTER_TYPE = 'desastre_natural';
+const DEFAULT_DISASTER_TYPE = "desastre_natural";
 
 export function CreateMissionScreen() {
   const mapRef = useRef<MapView | null>(null);
@@ -54,17 +64,21 @@ export function CreateMissionScreen() {
   const tabsBottomOffset = Math.max(insets.bottom - 6, 6);
   const maxFormHeight = Math.max(
     FORM_MIN_HEIGHT,
-    windowHeight - (tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS + FORM_VERTICAL_MARGIN)
+    windowHeight -
+      (tabsBottomOffset +
+        ORGANIZER_TABS_HEIGHT +
+        FORM_GAP_ABOVE_TABS +
+        FORM_VERTICAL_MARGIN),
   );
 
   const [isEventMenuOpen, setIsEventMenuOpen] = useState(false);
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
-  const [eventName, setEventName] = useState('');
+  const [eventName, setEventName] = useState("");
   const [disasterType, setDisasterType] = useState(DEFAULT_DISASTER_TYPE);
-  const [eventDescription, setEventDescription] = useState('');
+  const [eventDescription, setEventDescription] = useState("");
   const [selectedCity, setSelectedCity] = useState<ColombianCity | null>(null);
-  const [createdEventLabel, setCreatedEventLabel] = useState('');
+  const [createdEventLabel, setCreatedEventLabel] = useState("");
   const [formContentHeight, setFormContentHeight] = useState(FORM_MIN_HEIGHT);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
@@ -74,7 +88,10 @@ export function CreateMissionScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [myLocation, setMyLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   const canCreateEvent = useMemo(
     () =>
@@ -82,7 +99,7 @@ export function CreateMissionScreen() {
       disasterType.trim().length > 2 &&
       Boolean(selectedCity) &&
       !isSubmitting,
-    [disasterType, eventName, isSubmitting, selectedCity]
+    [disasterType, eventName, isSubmitting, selectedCity],
   );
 
   const mappedEvents = useMemo(
@@ -95,20 +112,28 @@ export function CreateMissionScreen() {
 
           return { event: eventItem, city: fallbackCity };
         })
-        .filter((eventItem): eventItem is { event: EventSummary; city: ColombianCity } => Boolean(eventItem)),
-    [events]
+        .filter(
+          (
+            eventItem,
+          ): eventItem is { event: EventSummary; city: ColombianCity } =>
+            Boolean(eventItem),
+        ),
+    [events],
   );
 
   const eventsById = useMemo(
     () => new Map(events.map((eventItem) => [eventItem.id, eventItem])),
-    [events]
+    [events],
   );
 
   const mappedPickupPoints = useMemo(
     () =>
       pickupPoints
         .map((pickupPoint) => {
-          if (typeof pickupPoint.latitude === 'number' && typeof pickupPoint.longitude === 'number') {
+          if (
+            typeof pickupPoint.latitude === "number" &&
+            typeof pickupPoint.longitude === "number"
+          ) {
             return {
               pickupPoint,
               latitude: pickupPoint.latitude,
@@ -127,7 +152,9 @@ export function CreateMissionScreen() {
           }
 
           const relatedEvent =
-            typeof pickupPoint.eventId === 'number' ? eventsById.get(pickupPoint.eventId) : undefined;
+            typeof pickupPoint.eventId === "number"
+              ? eventsById.get(pickupPoint.eventId)
+              : undefined;
 
           const relatedEventCity = relatedEvent
             ? findColombianCityByName(relatedEvent.city)
@@ -149,17 +176,20 @@ export function CreateMissionScreen() {
         })
         .filter(
           (
-            pickupItem
+            pickupItem,
           ): pickupItem is {
             pickupPoint: PickupPoint;
             latitude: number;
             longitude: number;
-          } => Boolean(pickupItem)
+          } => Boolean(pickupItem),
         ),
-    [eventsById, pickupPoints]
+    [eventsById, pickupPoints],
   );
 
-  const panelHeight = Math.min(Math.max(formContentHeight + 16, FORM_MIN_HEIGHT), maxFormHeight);
+  const panelHeight = Math.min(
+    Math.max(formContentHeight + 16, FORM_MIN_HEIGHT),
+    maxFormHeight,
+  );
   const shouldEnableScroll = formContentHeight + 16 > maxFormHeight;
 
   const loadMapData = useCallback(async () => {
@@ -181,14 +211,14 @@ export function CreateMissionScreen() {
 
     const failedSources: string[] = [];
 
-    if (eventsResult.status === 'fulfilled') {
+    if (eventsResult.status === "fulfilled") {
       setEvents(eventsResult.value.data);
     } else {
       setEvents([]);
-      failedSources.push('eventos');
+      failedSources.push("eventos");
     }
 
-    if (pickupPointsResult.status === 'fulfilled') {
+    if (pickupPointsResult.status === "fulfilled") {
       const mergedById = new Map<number, PickupPoint>();
 
       rememberedPickupPoints.forEach((item) => {
@@ -199,16 +229,18 @@ export function CreateMissionScreen() {
         mergedById.set(item.id, item);
       });
 
-      const mergedPickupPoints = Array.from(mergedById.values()).sort((a, b) => b.id - a.id);
+      const mergedPickupPoints = Array.from(mergedById.values()).sort(
+        (a, b) => b.id - a.id,
+      );
       setPickupPoints(mergedPickupPoints);
       rememberPickupPoints(mergedPickupPoints);
     } else {
       setPickupPoints(rememberedPickupPoints);
-      failedSources.push('puntos de recogida');
+      failedSources.push("puntos de recogida");
     }
 
     if (failedSources.length > 0) {
-      setLoadError(`No fue posible cargar: ${failedSources.join(' | ')}.`);
+      setLoadError(`No fue posible cargar: ${failedSources.join(" | ")}.`);
     }
 
     setIsLoadingEvents(false);
@@ -221,7 +253,7 @@ export function CreateMissionScreen() {
   useFocusEffect(
     useCallback(() => {
       loadMapData();
-    }, [loadMapData])
+    }, [loadMapData]),
   );
 
   useEffect(() => {
@@ -234,9 +266,9 @@ export function CreateMissionScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
 
-        if (status !== 'granted') {
+        if (status !== "granted") {
           if (isMounted) {
-            setLocationError('Permiso de ubicacion denegado.');
+            setLocationError("Permiso de ubicacion denegado.");
             setIsLocating(false);
           }
           return;
@@ -269,11 +301,11 @@ export function CreateMissionScreen() {
               latitude: position.coords.latitude,
               longitude: position.coords.longitude,
             });
-          }
+          },
         );
       } catch {
         if (isMounted) {
-          setLocationError('No fue posible obtener tu ubicacion.');
+          setLocationError("No fue posible obtener tu ubicacion.");
           setIsLocating(false);
         }
       }
@@ -300,7 +332,7 @@ export function CreateMissionScreen() {
         latitudeDelta: 0.04,
         longitudeDelta: 0.04,
       },
-      700
+      700,
     );
   };
 
@@ -323,22 +355,23 @@ export function CreateMissionScreen() {
         name: eventName.trim(),
         disasterType: disasterType.trim(),
         city: selectedCity.name,
-        description: eventDescription.trim() || 'Evento registrado desde aplicacion movil',
+        description:
+          eventDescription.trim() || "Evento registrado desde aplicacion movil",
         date: new Date().toISOString(),
         createdBy: DEFAULT_CREATED_BY,
       });
 
       setEvents((prev) => [createdEvent, ...prev]);
       setCreatedEventLabel(`${createdEvent.name} - ${createdEvent.city}`);
-      setEventName('');
+      setEventName("");
       setDisasterType(DEFAULT_DISASTER_TYPE);
-      setEventDescription('');
+      setEventDescription("");
       setIsCreateEventOpen(false);
       setIsEventMenuOpen(false);
       mapRef.current?.animateToRegion(selectedCity.region, 700);
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : 'No se pudo crear el evento.';
+        error instanceof Error ? error.message : "No se pudo crear el evento.";
       setSubmitError(`No se pudo crear el evento. ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
@@ -346,11 +379,11 @@ export function CreateMissionScreen() {
   };
 
   return (
-    <SafeAreaView className='flex-1 bg-[#dce9f5]'>
+    <SafeAreaView className="flex-1 bg-[#dce9f5]">
       <MapView initialRegion={COLOMBIA_REGION} ref={mapRef} style={{ flex: 1 }}>
         <UrlTile
           maximumZ={19}
-          urlTemplate='https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+          urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           zIndex={-1}
         />
 
@@ -371,7 +404,7 @@ export function CreateMissionScreen() {
             coordinate={{ latitude, longitude }}
             description={pickupPoint.address}
             key={`pickup-${pickupPoint.id}`}
-            pinColor='#0a84ff'
+            pinColor="#0a84ff"
             title={`Punto de recogida: ${pickupPoint.name}`}
           />
         ))}
@@ -382,7 +415,9 @@ export function CreateMissionScreen() {
               latitude: selectedCity.region.latitude,
               longitude: selectedCity.region.longitude,
             }}
-            description={eventDescription.trim() || eventName.trim() || 'Evento pendiente'}
+            description={
+              eventDescription.trim() || eventName.trim() || "Evento pendiente"
+            }
             title={selectedCity.name}
           />
         ) : null}
@@ -390,91 +425,97 @@ export function CreateMissionScreen() {
         {myLocation ? (
           <Marker
             coordinate={myLocation}
-            description='Ubicacion actual del dispositivo'
-            key='my-location'
-            pinColor='#2563eb'
-            title='Tu ubicacion'
+            description="Ubicacion actual del dispositivo"
+            key="my-location"
+            pinColor="#2563eb"
+            title="Tu ubicacion"
           />
         ) : null}
       </MapView>
 
       {isLoadingEvents ? (
-        <View className='absolute right-4 top-24 rounded-full bg-white px-3 py-2'>
-          <ActivityIndicator color='#1f5fe0' size='small' />
+        <View className="absolute right-4 top-24 rounded-full bg-white px-3 py-2">
+          <ActivityIndicator color="#1f5fe0" size="small" />
         </View>
       ) : null}
 
       {loadError ? (
-        <View className='absolute right-4 top-24 rounded-xl bg-[#ffecef] px-3 py-2'>
-          <Text className='text-xs text-[#9f2238]'>{loadError}</Text>
+        <View className="absolute right-4 top-24 rounded-xl bg-[#ffecef] px-3 py-2">
+          <Text className="text-xs text-[#9f2238]">{loadError}</Text>
         </View>
       ) : null}
 
       {locationError ? (
-        <View className='absolute left-20 right-4 top-24 rounded-xl bg-[#fff4e6] px-3 py-2'>
-          <Text className='text-xs text-[#9a6400]'>{locationError}</Text>
+        <View className="absolute left-20 right-4 top-24 rounded-xl bg-[#fff4e6] px-3 py-2">
+          <Text className="text-xs text-[#9a6400]">{locationError}</Text>
         </View>
       ) : null}
 
-      <View className='absolute right-4 top-40'>
+      <View className="absolute right-4 top-40">
         <Pressable
-          className='rounded-xl bg-[#1f5fe0] px-3 py-2'
+          className="rounded-xl bg-[#1f5fe0] px-3 py-2"
           disabled={!myLocation}
           onPress={centerOnMyLocation}
           style={{ opacity: myLocation ? 1 : 0.65 }}
         >
-          <Text className='text-xs font-semibold text-white'>Mi ubicacion</Text>
+          <Text className="text-xs font-semibold text-white">Mi ubicacion</Text>
         </Pressable>
       </View>
 
       {isLocating ? (
-        <View className='absolute right-4 top-52 rounded-xl bg-white px-3 py-2'>
-          <Text className='text-xs text-[#4d648a]'>Obteniendo ubicacion...</Text>
+        <View className="absolute right-4 top-52 rounded-xl bg-white px-3 py-2">
+          <Text className="text-xs text-[#4d648a]">
+            Obteniendo ubicacion...
+          </Text>
         </View>
       ) : null}
 
       {createdEventLabel ? (
         <Animated.View
-          className='absolute left-5 right-5 top-24 rounded-xl bg-[#183e80] px-4 py-3'
+          className="absolute left-5 right-5 top-24 rounded-xl bg-[#183e80] px-4 py-3"
           entering={FadeInUp.duration(350)}
           layout={Layout.springify()}
         >
-          <Text className='text-sm font-semibold text-white'>Evento creado: {createdEventLabel}</Text>
+          <Text className="text-sm font-semibold text-white">
+            Evento creado: {createdEventLabel}
+          </Text>
         </Animated.View>
       ) : null}
 
       <View
-        className='absolute left-4 items-start'
+        className="absolute left-4 items-start"
         style={{ top: insets.top + 16, zIndex: 70, elevation: 70 }}
       >
         <Pressable
-          className='h-16 w-16 items-center justify-center rounded-full bg-[#d63c4c]'
+          className="h-16 w-16 items-center justify-center rounded-full bg-[#d63c4c]"
           onPress={() => setIsEventMenuOpen((current) => !current)}
         >
-          <MaterialIcons color='#fff' name='warning' size={28} />
+          <MaterialIcons color="#fff" name="warning" size={28} />
         </Pressable>
 
         {isEventMenuOpen ? (
           <Animated.View
-            className='mt-3 w-64 rounded-2xl border border-[#d8e7ff] bg-white p-3'
+            className="mt-3 w-64 rounded-2xl border border-[#d8e7ff] bg-white p-3"
             entering={FadeInDown.duration(260)}
             layout={Layout.springify()}
           >
             <Pressable
-              className='flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
+              className="flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3"
               onPress={() => setIsCreateEventOpen((current) => !current)}
             >
-              <MaterialIcons color='#2f68d8' name='warning-amber' size={20} />
-              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>
+              <MaterialIcons color="#2f68d8" name="warning-amber" size={20} />
+              <Text className="ml-2 text-sm font-semibold text-[#1d3357]">
                 Crear Evento (Desastre)
               </Text>
             </Pressable>
             <Pressable
-              className='mt-2 flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
+              className="mt-2 flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3"
               onPress={loadMapData}
             >
-              <MaterialIcons color='#2f68d8' name='refresh' size={20} />
-              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Recargar mapa</Text>
+              <MaterialIcons color="#2f68d8" name="refresh" size={20} />
+              <Text className="ml-2 text-sm font-semibold text-[#1d3357]">
+                Recargar mapa
+              </Text>
             </Pressable>
           </Animated.View>
         ) : null}
@@ -482,108 +523,124 @@ export function CreateMissionScreen() {
 
       {isCreateEventOpen ? (
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          className='absolute bottom-0 left-0 right-0'
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="absolute bottom-0 left-0 right-0"
           style={{
-            bottom: tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS,
+            bottom:
+              tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS,
             zIndex: 45,
             elevation: 45,
           }}
         >
           <Animated.View
-            className='rounded-3xl border border-[#d5e3fb] bg-white px-5 pt-5'
+            className="rounded-3xl border border-[#d5e3fb] bg-white px-5 pt-5"
             entering={FadeInUp.duration(300)}
             layout={Layout.springify()}
             style={{ height: panelHeight }}
           >
             <ScrollView
               contentContainerStyle={{ paddingBottom: 24 }}
-              keyboardShouldPersistTaps='handled'
+              keyboardShouldPersistTaps="handled"
               onContentSizeChange={(_, contentHeight) => {
                 setFormContentHeight(contentHeight);
               }}
               scrollEnabled={shouldEnableScroll}
               showsVerticalScrollIndicator={false}
             >
-              <Text className='text-lg font-extrabold text-[#14243f]'>Crear Evento De Desastre Natural</Text>
-              <Text className='mt-1 text-sm text-[#5f7396]'>
-                Registra rapidamente el incidente y ubicalo en una ciudad de Colombia.
+              <Text className="text-lg font-extrabold text-[#14243f]">
+                Crear Evento De Desastre Natural
+              </Text>
+              <Text className="mt-1 text-sm text-[#5f7396]">
+                Registra rapidamente el incidente y ubicalo en una ciudad de
+                Colombia.
               </Text>
 
-              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Nombre Del Evento</Text>
+              <Text className="mt-4 mb-2 text-sm font-semibold text-[#233b61]">
+                Nombre Del Evento
+              </Text>
               <TextInput
-                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
+                className="rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]"
                 onChangeText={setEventName}
-                placeholder='Ej: Inundacion por lluvias intensas'
-                placeholderTextColor='#8ba2c3'
+                placeholder="Ej: Inundacion por lluvias intensas"
+                placeholderTextColor="#8ba2c3"
                 value={eventName}
               />
 
-              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Tipo De Desastre</Text>
+              <Text className="mt-4 mb-2 text-sm font-semibold text-[#233b61]">
+                Tipo De Desastre
+              </Text>
               <TextInput
-                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
+                className="rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]"
                 onChangeText={setDisasterType}
-                placeholder='Ej: inundacion'
-                placeholderTextColor='#8ba2c3'
+                placeholder="Ej: inundacion"
+                placeholderTextColor="#8ba2c3"
                 value={disasterType}
               />
 
-              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Descripcion</Text>
+              <Text className="mt-4 mb-2 text-sm font-semibold text-[#233b61]">
+                Descripcion
+              </Text>
               <TextInput
-                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
+                className="rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]"
                 multiline
                 numberOfLines={4}
                 onChangeText={setEventDescription}
-                placeholder='Ej: Desbordamiento del rio por lluvias continuas en la zona norte.'
-                placeholderTextColor='#8ba2c3'
-                style={{ minHeight: 96, textAlignVertical: 'top' }}
+                placeholder="Ej: Desbordamiento del rio por lluvias continuas en la zona norte."
+                placeholderTextColor="#8ba2c3"
+                style={{ minHeight: 96, textAlignVertical: "top" }}
                 value={eventDescription}
               />
 
-              <Text className='mt-4 mb-2 text-sm font-semibold text-[#233b61]'>Ciudad</Text>
+              <Text className="mt-4 mb-2 text-sm font-semibold text-[#233b61]">
+                Ciudad
+              </Text>
               <Pressable
-                className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3'
+                className="rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3"
                 onPress={() => setIsCitySelectorOpen((current) => !current)}
               >
-                <Text className='text-[#1b3357]'>
-                  {selectedCity ? selectedCity.name : 'Selecciona una ciudad de Colombia'}
+                <Text className="text-[#1b3357]">
+                  {selectedCity
+                    ? selectedCity.name
+                    : "Selecciona una ciudad de Colombia"}
                 </Text>
               </Pressable>
 
               {isCitySelectorOpen ? (
-                <ScrollView className='mt-3 max-h-40 rounded-xl border border-[#d6e4fb] bg-[#fafdff]'>
+                <ScrollView className="mt-3 max-h-40 rounded-xl border border-[#d6e4fb] bg-[#fafdff]">
                   {COLOMBIAN_CITIES.map((city) => (
                     <Pressable
-                      className='border-b border-[#e8effd] px-4 py-3'
+                      className="border-b border-[#e8effd] px-4 py-3"
                       key={city.id}
                       onPress={() => handleSelectCity(city)}
                     >
-                      <Text className='text-[#20375d]'>{city.name}</Text>
+                      <Text className="text-[#20375d]">{city.name}</Text>
                     </Pressable>
                   ))}
                 </ScrollView>
               ) : null}
 
               {submitError ? (
-                <Text className='mt-3 text-sm text-[#c3324d]'>{submitError}</Text>
+                <Text className="mt-3 text-sm text-[#c3324d]">
+                  {submitError}
+                </Text>
               ) : null}
 
-              <View className='mt-6 flex-row items-center justify-between'>
+              <View className="mt-6 flex-row items-center justify-between">
                 <Pressable
-                  className='rounded-xl border border-[#d3def3] px-4 py-3'
+                  className="rounded-xl border border-[#d3def3] px-4 py-3"
                   onPress={() => setIsCreateEventOpen(false)}
                 >
-                  <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
+                  <Text className="font-semibold text-[#3a5176]">Cancelar</Text>
                 </Pressable>
                 <Pressable
                   className={`rounded-xl px-5 py-3 ${
-                    canCreateEvent ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'
+                    canCreateEvent ? "bg-[#1f5fe0]" : "bg-[#9db8e5]"
                   }`}
                   disabled={!canCreateEvent}
                   onPress={handleCreateEvent}
                 >
-                  <Text className='font-semibold text-white'>
-                    {isSubmitting ? 'Creando...' : 'Crear Evento'}
+                  <Text className="font-semibold text-white">
+                    {isSubmitting ? "Creando..." : "Crear Evento"}
                   </Text>
                 </Pressable>
               </View>
@@ -592,7 +649,7 @@ export function CreateMissionScreen() {
         </KeyboardAvoidingView>
       ) : null}
 
-      <OrganizerBottomTabs activeTab='inicio' />
+      <OrganizerBottomTabs activeTab="inicio" />
     </SafeAreaView>
   );
 }

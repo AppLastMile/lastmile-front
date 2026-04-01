@@ -1,4 +1,4 @@
-import type { PickupPoint } from '@/services/api/logisticsService';
+import type { PickupPoint } from "@/services/api/logisticsService";
 
 let memory: PickupPoint[] = [];
 

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { getEvents } from '@/services/api/eventsService';
-import { findColombianCityByName } from '@/modules/missions/constants/colombianCities';
+import { useEffect, useState } from "react";
+import { getEvents } from "@/services/api/eventsService";
+import { findColombianCityByName } from "@/modules/missions/constants/colombianCities";
 
 export interface Mission {
   id: string;
@@ -8,7 +8,7 @@ export interface Mission {
   location: string;
   latitude: number;
   longitude: number;
-  status: 'available' | 'taken' | 'delivered';
+  status: "available" | "taken" | "delivered";
 }
 
 let missionsState: Mission[] = [];
@@ -33,13 +33,13 @@ export function useMissions() {
           location: event.city,
           latitude: city?.region.latitude ?? 0,
           longitude: city?.region.longitude ?? 0,
-          status: 'available',
+          status: "available",
         };
       });
 
       setMissions([...missionsState]);
     } catch (e) {
-      console.log('Error cargando missions', e);
+      console.log("Error cargando missions", e);
     } finally {
       setLoading(false);
     }
@@ -52,9 +52,9 @@ export function useMissions() {
     }
   }, []);
 
-  const updateMission = (id: string, status: Mission['status']) => {
+  const updateMission = (id: string, status: Mission["status"]) => {
     missionsState = missionsState.map((m) =>
-      m.id === id ? { ...m, status } : m
+      m.id === id ? { ...m, status } : m,
     );
 
     setMissions([...missionsState]);

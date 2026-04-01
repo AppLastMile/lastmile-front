@@ -11,8 +11,8 @@ export type ColombianCity = {
 
 export const COLOMBIAN_CITIES: ColombianCity[] = [
   {
-    id: 'bogota',
-    name: 'Bogota',
+    id: "bogota",
+    name: "Bogota",
     region: {
       latitude: 4.711,
       longitude: -74.0721,
@@ -21,8 +21,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'medellin',
-    name: 'Medellin',
+    id: "medellin",
+    name: "Medellin",
     region: {
       latitude: 6.2442,
       longitude: -75.5812,
@@ -31,8 +31,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'cali',
-    name: 'Cali',
+    id: "cali",
+    name: "Cali",
     region: {
       latitude: 3.4516,
       longitude: -76.532,
@@ -41,8 +41,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'barranquilla',
-    name: 'Barranquilla',
+    id: "barranquilla",
+    name: "Barranquilla",
     region: {
       latitude: 10.9685,
       longitude: -74.7813,
@@ -51,8 +51,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'cartagena',
-    name: 'Cartagena',
+    id: "cartagena",
+    name: "Cartagena",
     region: {
       latitude: 10.391,
       longitude: -75.4794,
@@ -61,8 +61,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'bucaramanga',
-    name: 'Bucaramanga',
+    id: "bucaramanga",
+    name: "Bucaramanga",
     region: {
       latitude: 7.1193,
       longitude: -73.1227,
@@ -71,8 +71,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'manizales',
-    name: 'Manizales',
+    id: "manizales",
+    name: "Manizales",
     region: {
       latitude: 5.0703,
       longitude: -75.5138,
@@ -81,8 +81,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'pasto',
-    name: 'Pasto',
+    id: "pasto",
+    name: "Pasto",
     region: {
       latitude: 1.2136,
       longitude: -77.2811,
@@ -91,8 +91,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'cucuta',
-    name: 'Cucuta',
+    id: "cucuta",
+    name: "Cucuta",
     region: {
       latitude: 7.8891,
       longitude: -72.4967,
@@ -101,8 +101,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
     },
   },
   {
-    id: 'villavicencio',
-    name: 'Villavicencio',
+    id: "villavicencio",
+    name: "Villavicencio",
     region: {
       latitude: 4.142,
       longitude: -73.6266,
@@ -114,8 +114,8 @@ export const COLOMBIAN_CITIES: ColombianCity[] = [
 
 function normalizeCityName(value: string) {
   return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
 }
@@ -124,6 +124,6 @@ export function findColombianCityByName(cityName: string) {
   const normalizedTarget = normalizeCityName(cityName);
 
   return COLOMBIAN_CITIES.find(
-    (city) => normalizeCityName(city.name) === normalizedTarget
+    (city) => normalizeCityName(city.name) === normalizedTarget,
   );
 }

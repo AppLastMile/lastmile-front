@@ -1,8 +1,8 @@
-import type { PaginatedResponse } from '@/types/pagination';
+import type { PaginatedResponse } from "@/types/pagination";
 
-import { httpClient } from './httpClient';
+import { httpClient } from "./httpClient";
 
-export type AuctionStatus = 'active' | 'sold' | 'cancelled';
+export type AuctionStatus = "active" | "sold" | "cancelled";
 
 export type Auction = {
   id: number;
@@ -31,20 +31,31 @@ export type BuyAuctionPayload = {
   idempotencyKey?: string;
 };
 
-export async function getCampaignAuctions(campaignId: number, status: 'active' | 'sold' | 'all' = 'all') {
-  return httpClient<PaginatedResponse<Auction>>(`/campaigns/${campaignId}/auctions?status=${status}&page=1&limit=100`);
+export async function getCampaignAuctions(
+  campaignId: number,
+  status: "active" | "sold" | "all" = "all",
+) {
+  return httpClient<PaginatedResponse<Auction>>(
+    `/campaigns/${campaignId}/auctions?status=${status}&page=1&limit=100`,
+  );
 }
 
-export async function createAuction(campaignId: number, payload: CreateAuctionPayload) {
+export async function createAuction(
+  campaignId: number,
+  payload: CreateAuctionPayload,
+) {
   return httpClient<Auction>(`/campaigns/${campaignId}/auctions`, {
-    method: 'POST',
+    method: "POST",
     body: payload,
   });
 }
 
-export async function buyAuction(auctionId: number, payload: BuyAuctionPayload) {
+export async function buyAuction(
+  auctionId: number,
+  payload: BuyAuctionPayload,
+) {
   return httpClient<Auction>(`/auctions/${auctionId}/buy`, {
-    method: 'POST',
+    method: "POST",
     body: payload,
   });
 }

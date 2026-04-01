@@ -1,6 +1,6 @@
-import type { PaginatedResponse } from '@/types/pagination';
+import type { PaginatedResponse } from "@/types/pagination";
 
-import { httpClient } from './httpClient';
+import { httpClient } from "./httpClient";
 
 export type EventSummary = {
   id: number;
@@ -42,23 +42,25 @@ export async function getEvents({
   });
 
   if (city) {
-    params.set('city', city);
+    params.set("city", city);
   }
 
   if (disasterType) {
-    params.set('disasterType', disasterType);
+    params.set("disasterType", disasterType);
   }
 
   if (search) {
-    params.set('search', search);
+    params.set("search", search);
   }
 
-  return httpClient<PaginatedResponse<EventSummary>>(`/events?${params.toString()}`);
+  return httpClient<PaginatedResponse<EventSummary>>(
+    `/events?${params.toString()}`,
+  );
 }
 
 export async function createEvent(payload: CreateEventPayload) {
-  return httpClient<EventSummary>('/events', {
-    method: 'POST',
+  return httpClient<EventSummary>("/events", {
+    method: "POST",
     body: payload,
   });
 }

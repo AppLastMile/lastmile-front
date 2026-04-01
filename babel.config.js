@@ -2,16 +2,16 @@ module.exports = function (api) {
   api.cache(true);
 
   return {
-    presets: ['babel-preset-expo', 'nativewind/babel'],
+    presets: ["babel-preset-expo", "nativewind/babel"],
     plugins: [
       [
-        '@tamagui/babel-plugin',
+        "@tamagui/babel-plugin",
         {
-          config: './tamagui.config.ts',
-          components: ['@tamagui/core'],
+          config: "./tamagui.config.ts",
+          components: ["@tamagui/core"],
         },
       ],
-      'react-native-reanimated/plugin',
+      "react-native-reanimated/plugin",
     ],
   };
 };

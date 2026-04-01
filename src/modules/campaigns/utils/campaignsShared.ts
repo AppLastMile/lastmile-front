@@ -1,5 +1,5 @@
-import type { Auction } from '@/services/api/auctionsService';
-import type { ItemDonationResponse } from '@/services/api/donationsService';
+import type { Auction } from "@/services/api/auctionsService";
+import type { ItemDonationResponse } from "@/services/api/donationsService";
 
 export type ChatMessage = {
   id: string;
@@ -34,11 +34,11 @@ export type InventoryRealtimeEvent = {
 };
 
 export const PHYSICAL_DONATION_OPTIONS: PhysicalDonationOption[] = [
-  { key: 'cama', label: 'Camas' },
-  { key: 'colchon', label: 'Colchones' },
-  { key: 'cobija', label: 'Cobijas' },
-  { key: 'kit_higiene', label: 'Kits de higiene' },
-  { key: 'alimento', label: 'Alimentos' },
+  { key: "cama", label: "Camas" },
+  { key: "colchon", label: "Colchones" },
+  { key: "cobija", label: "Cobijas" },
+  { key: "kit_higiene", label: "Kits de higiene" },
+  { key: "alimento", label: "Alimentos" },
 ];
 
 export function normalizeCollection<T>(response: unknown): T[] {
@@ -47,9 +47,9 @@ export function normalizeCollection<T>(response: unknown): T[] {
   }
 
   if (
-    typeof response === 'object' &&
+    typeof response === "object" &&
     response !== null &&
-    'data' in response &&
+    "data" in response &&
     Array.isArray((response as { data?: unknown }).data)
   ) {
     return (response as { data: T[] }).data;
@@ -58,7 +58,9 @@ export function normalizeCollection<T>(response: unknown): T[] {
   return [];
 }
 
-export function buildInventoryMap(itemDonations: ItemDonationResponse[]): ItemInventoryByCampaign {
+export function buildInventoryMap(
+  itemDonations: ItemDonationResponse[],
+): ItemInventoryByCampaign {
   return itemDonations.reduce<ItemInventoryByCampaign>((acc, donation) => {
     const campaignBucket = acc[donation.campaignId] ?? {};
     const itemKey = donation.itemType;
@@ -74,22 +76,22 @@ export function buildInventoryMap(itemDonations: ItemDonationResponse[]): ItemIn
 
 export function getErrorMessage(error: unknown) {
   if (!(error instanceof Error)) {
-    return 'Error desconocido.';
+    return "Error desconocido.";
   }
 
   const rawMessage = error.message?.trim();
   if (!rawMessage) {
-    return 'Error desconocido.';
+    return "Error desconocido.";
   }
 
   try {
     const parsed = JSON.parse(rawMessage) as { message?: string | string[] };
 
     if (Array.isArray(parsed.message)) {
-      return parsed.message.join(' | ');
+      return parsed.message.join(" | ");
     }
 
-    if (typeof parsed.message === 'string') {
+    if (typeof parsed.message === "string") {
       return parsed.message;
     }
 
@@ -100,9 +102,9 @@ export function getErrorMessage(error: unknown) {
 }
 
 export function formatMoney(value: number) {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
     maximumFractionDigits: 0,
   }).format(value);
 }

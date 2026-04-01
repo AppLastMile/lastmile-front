@@ -1,123 +1,231 @@
-import { AppScreen } from '@/components/ui/AppScreen';
-import { View, Text, FlatList, Pressable, ActivityIndicator } from 'react-native';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { AppScreen } from "@/components/ui/AppScreen";
+import {
+  View,
+  Text,
+  FlatList,
+  Pressable,
+  ActivityIndicator,
+} from "react-native";
+import { useEffect, useState } from "react";
+import { useRouter } from "expo-router";
+import { useRealtimeMissions } from "../hooks/useRealtimeMissions";
 
-import { useMissionStatus } from '../hooks/useMissionStatus';
-import { getEvents, type EventSummary } from '@/services/api/eventsService';
-
-type ListItem =
-  | { type: 'title'; title: string }
-  | { type: 'available'; data: EventSummary }
-  | { type: 'taken'; data: EventSummary };
+import {
+  getVolunteerShipments,
+  updateShipmentStatus,
+  type Shipment,
+  getPickupPoints,
+  type PickupPoint,
+} from "@/services/api/logisticsService";
 
 export function MissionsScreen() {
   const router = useRouter();
-  const { getStatus, updateMission } = useMissionStatus();
+  const volunteerId = 10;
 
-  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
+
+  // =========================
+  // 🔥 LOAD INICIAL
+  // =========================
+  const loadData = async () => {
+    try {
+      const [shipmentsRes, pointsRes] = await Promise.all([
+        getVolunteerShipments(volunteerId),
+        getPickupPoints(),
+      ]);
+
+      setShipments(shipmentsRes.data);
+      setPickupPoints(pointsRes.data);
+    } catch (e) {
+      console.log("Error cargando data", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      try {
-        const response = await getEvents({ page: 1, limit: 100 });
-        setEvents(response.data);
-      } catch (e) {
-        console.log('Error cargando missions', e);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
+    loadData();
   }, []);
 
-  const available = events.filter(
-    (e) => getStatus(String(e.id)) === 'available'
-  );
+  // =========================
+  // 🔥 REALTIME (CLAVE)
+  // =========================
+  useRealtimeMissions((updatedShipment) => {
+    setShipments((prev) => {
+      const exists = prev.find((s) => s.id === updatedShipment.id);
 
-  const taken = events.filter(
-    (e) => getStatus(String(e.id)) === 'taken'
-  );
+      // 🔥 si no existe, lo agregamos (nueva misión)
+      if (!exists) {
+        return [updatedShipment, ...prev];
+      }
 
-  const deliverMission = (id: string) => {
-    updateMission(id, 'delivered');
+      // 🔥 si existe, lo actualizamos
+      return prev.map((s) =>
+        s.id === updatedShipment.id ? updatedShipment : s,
+      );
+    });
+  });
+
+  // =========================
+  // HELPERS
+  // =========================
+  const getPointInfo = (id?: number) => {
+    const point = pickupPoints.find((p) => p.id === id);
+    if (!point) return "Punto desconocido";
+
+    return `${point.name} · ${point.city}`;
   };
 
-  // 🔥 UNIFICAMOS TODO EN UNA LISTA
-  const listData: ListItem[] = [
-    { type: 'title', title: 'Misiones disponibles' },
-    ...available.map((e) => ({ type: 'available' as const, data: e })),
-    { type: 'title', title: 'Misiones aceptadas' },
-    ...taken.map((e) => ({ type: 'taken' as const, data: e })),
-  ];
+  const goToMap = (shipment: Shipment) => {
+    router.push({
+      pathname: "/map",
+      params: {
+        shipmentId: shipment.id.toString(),
+        pickupPointId: shipment.pickupPointId?.toString(),
+      },
+    });
+  };
 
-  const renderItem = ({ item }: { item: ListItem }) => {
-    if (item.type === 'title') {
-      return (
-        <Text
-          style={{
-            fontSize: 20,
-            fontWeight: 'bold',
-            marginTop: 20,
-            marginBottom: 10,
-          }}
-        >
-          {item.title}
+  const goToDetail = (shipment: Shipment) => {
+    router.push(`/missions/${shipment.id}`);
+  };
+
+  const deliverShipment = async (id: number) => {
+    try {
+      setUpdatingId(id);
+
+      await updateShipmentStatus(id, "delivered");
+
+      // 🔥 actualización optimista
+      setShipments((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, status: "delivered" } : s)),
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // =========================
+  // FILTROS
+  // =========================
+  const available = shipments.filter((s) => s.status === "pending");
+
+  const active = shipments.filter(
+    (s) => s.status === "assigned" || s.status === "in_transit",
+  );
+
+  const history = shipments.filter((s) => s.status === "delivered");
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "pending":
+        return "#f59e0b";
+      case "assigned":
+        return "#3b82f6";
+      case "in_transit":
+        return "#8b5cf6";
+      case "delivered":
+        return "#16a34a";
+      default:
+        return "#999";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "pending":
+        return "Pendiente";
+      case "assigned":
+        return "Asignado";
+      case "in_transit":
+        return "En camino";
+      case "delivered":
+        return "Entregado";
+      default:
+        return status;
+    }
+  };
+
+  // =========================
+  // CARD
+  // =========================
+  const renderCard = (shipment: Shipment) => {
+    const isDelivered = shipment.status === "delivered";
+    const isAssigned =
+      shipment.status === "assigned" || shipment.status === "in_transit";
+    const isPending = shipment.status === "pending";
+    const isLoading = updatingId === shipment.id;
+
+    return (
+      <View
+        key={shipment.id}
+        className="bg-white p-4 rounded-2xl mb-3"
+        style={{
+          shadowColor: "#000",
+          shadowOpacity: 0.05,
+          shadowRadius: 6,
+          elevation: 2,
+        }}
+      >
+        <Text className="font-bold text-lg">📦 Envío #{shipment.id}</Text>
+
+        <Text className="text-gray-500 mt-1">
+          📍 {getPointInfo(shipment.pickupPointId)}
         </Text>
-      );
-    }
 
-    if (item.type === 'available') {
-      return (
-        <Pressable
-          onPress={() => router.push(`/missions/${item.data.id}`)}
-          style={{
-            backgroundColor: '#fff',
-            padding: 16,
-            borderRadius: 12,
-            marginBottom: 12,
-          }}
+        <Text
+          className="mt-2 font-bold"
+          style={{ color: getStatusColor(shipment.status) }}
         >
-          <Text style={{ fontWeight: 'bold' }}>{item.data.name}</Text>
-          <Text style={{ color: 'gray' }}>📍 {item.data.city}</Text>
-        </Pressable>
-      );
-    }
+          Estado: {getStatusLabel(shipment.status)}
+        </Text>
 
-    if (item.type === 'taken') {
-      return (
-        <View
-          style={{
-            backgroundColor: '#e0f2fe',
-            padding: 16,
-            borderRadius: 12,
-            marginBottom: 12,
-          }}
-        >
-          <Text style={{ fontWeight: 'bold' }}>{item.data.name}</Text>
-          <Text style={{ color: 'gray' }}>📍 {item.data.city}</Text>
+        <View className="mt-4 flex-row gap-2">
+          {isPending && (
+            <Pressable
+              onPress={() => goToDetail(shipment)}
+              className="flex-1 bg-[#2563eb] py-3 rounded-xl items-center"
+            >
+              <Text className="text-white font-semibold">Aceptar</Text>
+            </Pressable>
+          )}
 
-          <Pressable
-            onPress={() => deliverMission(String(item.data.id))}
-            style={{
-              marginTop: 10,
-              backgroundColor: '#16a34a',
-              padding: 10,
-              borderRadius: 8,
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ color: '#fff' }}>Confirmar entrega</Text>
-          </Pressable>
+          {isAssigned && !isDelivered && (
+            <>
+              <Pressable
+                onPress={() => goToMap(shipment)}
+                className="flex-1 bg-[#3b82f6] py-3 rounded-xl items-center"
+              >
+                <Text className="text-white font-semibold">Ver mapa</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => deliverShipment(shipment.id)}
+                className="flex-1 bg-[#16a34a] py-3 rounded-xl items-center"
+              >
+                <Text className="text-white font-semibold">
+                  {isLoading ? "..." : "Entregar"}
+                </Text>
+              </Pressable>
+            </>
+          )}
         </View>
-      );
-    }
 
-    return null;
+        {isDelivered && (
+          <Text className="mt-3 text-green-600 font-semibold">
+            ✅ Entregado
+          </Text>
+        )}
+      </View>
+    );
   };
 
+  // =========================
+  // RENDER
+  // =========================
   if (loading) {
     return (
       <AppScreen>
@@ -129,10 +237,37 @@ export function MissionsScreen() {
   return (
     <AppScreen>
       <FlatList
-        data={listData}
-        keyExtractor={(_, index) => index.toString()}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: 16 }}
+        data={[1]}
+        renderItem={() => (
+          <View style={{ padding: 16 }}>
+            {available.length > 0 && (
+              <>
+                <Text className="text-xl font-bold mb-3 text-[#15325c]">
+                  🟢 Disponibles
+                </Text>
+                {available.map(renderCard)}
+              </>
+            )}
+
+            {active.length > 0 && (
+              <>
+                <Text className="text-xl font-bold mt-6 mb-3 text-[#15325c]">
+                  🚚 Mis misiones
+                </Text>
+                {active.map(renderCard)}
+              </>
+            )}
+
+            {history.length > 0 && (
+              <>
+                <Text className="text-xl font-bold mt-6 mb-3 text-[#15325c]">
+                  📦 Historial
+                </Text>
+                {history.map(renderCard)}
+              </>
+            )}
+          </View>
+        )}
       />
     </AppScreen>
   );

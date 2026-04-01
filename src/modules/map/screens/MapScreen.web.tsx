@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
-import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  Text,
+  View,
+} from "react-native";
+import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
 
 import {
   findColombianCityByName,
   type ColombianCity,
-} from '@/modules/missions/constants/colombianCities';
-import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
-import { type EventSummary, getEvents } from '@/services/api/eventsService';
+} from "@/modules/missions/constants/colombianCities";
+import { useAuthSession } from "@/modules/auth/context/AuthSessionContext";
+import { DonorBottomTabs } from "@/modules/donor/components/DonorBottomTabs";
+import { type EventSummary, getEvents } from "@/services/api/eventsService";
 
 type EventWithCity = {
   event: EventSummary;
@@ -20,7 +26,7 @@ const COLOMBIA_CENTER: [number, number] = [4.5709, -74.2973];
 
 export function MapScreen() {
   const { currentUser } = useAuthSession();
-  const isDonor = currentUser?.role === 'donor';
+  const isDonor = currentUser?.role === "donor";
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +45,7 @@ export function MapScreen() {
           return { event: eventItem, city };
         })
         .filter((eventItem): eventItem is EventWithCity => eventItem !== null),
-    [events]
+    [events],
   );
 
   const mapCenter = useMemo<[number, number]>(() => {
@@ -65,7 +71,7 @@ export function MapScreen() {
       const response = await getEvents({ page: 1, limit: 100 });
       setEvents(response.data);
     } catch {
-      setError('No fue posible cargar eventos para el mapa web.');
+      setError("No fue posible cargar eventos para el mapa web.");
     } finally {
       setIsLoading(false);
     }
@@ -91,7 +97,7 @@ export function MapScreen() {
         enableHighAccuracy: false,
         timeout: 8000,
         maximumAge: 5000,
-      }
+      },
     );
 
     return () => {
@@ -100,41 +106,56 @@ export function MapScreen() {
   }, []);
 
   return (
-    <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
-      <View className='px-4 pb-3 pt-3'>
-        <Text className='text-2xl font-extrabold text-[#16325d]'>Mapa de eventos</Text>
-        <Text className='mt-1 text-sm text-[#4d648a]'>
+    <SafeAreaView className="flex-1 bg-[#eaf2ff]">
+      <View className="px-4 pb-3 pt-3">
+        <Text className="text-2xl font-extrabold text-[#16325d]">
+          Mapa de eventos
+        </Text>
+        <Text className="mt-1 text-sm text-[#4d648a]">
           OpenStreetMap en web con marcadores en tiempo real de los eventos.
         </Text>
 
         {!isDonor ? (
-          <View className='mt-3 flex-row items-center justify-between'>
-            <Text className='text-sm font-semibold text-[#2a456e]'>Marcadores: {mappedEvents.length}</Text>
-            <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadEvents}>
-              <Text className='font-semibold text-white'>Recargar</Text>
+          <View className="mt-3 flex-row items-center justify-between">
+            <Text className="text-sm font-semibold text-[#2a456e]">
+              Marcadores: {mappedEvents.length}
+            </Text>
+            <Pressable
+              className="rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90"
+              onPress={loadEvents}
+            >
+              <Text className="font-semibold text-white">Recargar</Text>
             </Pressable>
           </View>
         ) : null}
       </View>
 
-      <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
-        <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+      <View className="flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]">
+        <MapContainer
+          center={mapCenter}
+          style={{ height: "100%", width: "100%" }}
+          zoom={6}
+        >
           <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+            attribution="&copy; OpenStreetMap contributors"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
           {mappedEvents.map(({ event, city }) => (
             <CircleMarker
               center={[city.region.latitude, city.region.longitude]}
               key={event.id}
-              pathOptions={{ color: '#e03b3b', fillColor: '#ff6b6b', fillOpacity: 0.9 }}
+              pathOptions={{
+                color: "#e03b3b",
+                fillColor: "#ff6b6b",
+                fillOpacity: 0.9,
+              }}
               radius={9}
             >
               <Popup>
                 <strong>{event.name}</strong>
                 <br />
-                {event.description || 'Sin descripcion'}
+                {event.description || "Sin descripcion"}
                 <br />
                 {event.city}
               </Popup>
@@ -144,8 +165,12 @@ export function MapScreen() {
           {myLocation ? (
             <CircleMarker
               center={myLocation}
-              key='my-location'
-              pathOptions={{ color: '#1f5fe0', fillColor: '#2a7fff', fillOpacity: 0.95 }}
+              key="my-location"
+              pathOptions={{
+                color: "#1f5fe0",
+                fillColor: "#2a7fff",
+                fillOpacity: 0.95,
+              }}
               radius={8}
             >
               <Popup>Tu ubicacion actual</Popup>
@@ -154,21 +179,21 @@ export function MapScreen() {
         </MapContainer>
 
         {isLoading ? (
-          <View className='absolute left-0 right-0 top-3 items-center'>
-            <View className='rounded-full bg-white px-4 py-2'>
-              <ActivityIndicator color='#1f5fe0' size='small' />
+          <View className="absolute left-0 right-0 top-3 items-center">
+            <View className="rounded-full bg-white px-4 py-2">
+              <ActivityIndicator color="#1f5fe0" size="small" />
             </View>
           </View>
         ) : null}
 
         {error ? (
-          <View className='absolute left-3 right-3 top-3 rounded-xl bg-[#ffecef] px-3 py-2'>
-            <Text className='text-sm text-[#a1263d]'>{error}</Text>
+          <View className="absolute left-3 right-3 top-3 rounded-xl bg-[#ffecef] px-3 py-2">
+            <Text className="text-sm text-[#a1263d]">{error}</Text>
           </View>
         ) : null}
       </View>
 
-      {isDonor ? <DonorBottomTabs activeTab='inicio' /> : null}
+      {isDonor ? <DonorBottomTabs activeTab="inicio" /> : null}
     </SafeAreaView>
   );
 }

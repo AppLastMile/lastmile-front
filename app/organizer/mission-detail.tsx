@@ -1,3 +1,3 @@
-import { OrganizerMissionDetailScreen } from '@/modules/missions/screens/OrganizerMissionDetailScreen';
+import { OrganizerMissionDetailScreen } from "@/modules/missions/screens/OrganizerMissionDetailScreen";
 
 export default OrganizerMissionDetailScreen;

@@ -1,4 +1,4 @@
-import { httpClient } from '@/services/api/httpClient';
+import { httpClient } from "@/services/api/httpClient";
 
 export type LoginPayload = {
   email: string;
@@ -10,14 +10,14 @@ export type AuthSession = {
   user: {
     id: number;
     email: string;
-    role: 'organizer' | 'volunteer' | 'donor';
+    role: "organizer" | "volunteer" | "donor";
   };
 };
 
 export const authService = {
   login(payload: LoginPayload) {
-    return httpClient<AuthSession>('/auth/login', {
-      method: 'POST',
+    return httpClient<AuthSession>("/auth/login", {
+      method: "POST",
       body: payload,
     });
   },

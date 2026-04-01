@@ -1,6 +1,6 @@
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
-import { io, type Socket } from 'socket.io-client';
+import Constants from "expo-constants";
+import { Platform } from "react-native";
+import { io, type Socket } from "socket.io-client";
 
 type RealtimeAuth = {
   token?: string;
@@ -14,18 +14,18 @@ let socket: Socket | null = null;
 let connectErrors = 0;
 const joinedRooms = new Set<string>();
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
-const DEFAULT_WS_NAMESPACE = '/ws';
-const DEFAULT_WS_PATH = '/socket.io';
+const DEFAULT_API_BASE_URL = "http://localhost:3000/api/v1";
+const DEFAULT_WS_NAMESPACE = "/ws";
+const DEFAULT_WS_PATH = "/socket.io";
 
 type KnownEnvKey =
-  | 'EXPO_PUBLIC_API_URL'
-  | 'EXPO_PUBLIC_WS_URL'
-  | 'EXPO_PUBLIC_WS_NAMESPACE'
-  | 'EXPO_PUBLIC_WS_PATH'
-  | 'EXPO_PUBLIC_WS_TRANSPORTS'
-  | 'EXPO_PUBLIC_WS_ALLOW_ANONYMOUS'
-  | 'EXPO_PUBLIC_WS_DEBUG';
+  | "EXPO_PUBLIC_API_URL"
+  | "EXPO_PUBLIC_WS_URL"
+  | "EXPO_PUBLIC_WS_NAMESPACE"
+  | "EXPO_PUBLIC_WS_PATH"
+  | "EXPO_PUBLIC_WS_TRANSPORTS"
+  | "EXPO_PUBLIC_WS_ALLOW_ANONYMOUS"
+  | "EXPO_PUBLIC_WS_DEBUG";
 
 const KNOWN_EXPO_ENV: Record<KnownEnvKey, string | undefined> = {
   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
@@ -48,7 +48,9 @@ function getEnvValue(key: KnownEnvKey) {
     return knownEnv;
   }
 
-  return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[key];
+  return (
+    globalThis as { process?: { env?: Record<string, string | undefined> } }
+  ).process?.env?.[key];
 }
 
 function isTruthyEnv(value: string | undefined) {
@@ -56,47 +58,54 @@ function isTruthyEnv(value: string | undefined) {
     return false;
   }
 
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
 function getExpoHostIp() {
   const hostUri =
     (Constants as { expoConfig?: { hostUri?: string } }).expoConfig?.hostUri ??
-    (Constants as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig?.debuggerHost;
+    (Constants as { expoGoConfig?: { debuggerHost?: string } }).expoGoConfig
+      ?.debuggerHost;
 
   if (!hostUri) {
     return null;
   }
 
-  return hostUri.split(':')[0] ?? null;
+  return hostUri.split(":")[0] ?? null;
 }
 
 function getBrowserHost() {
-  const location = (globalThis as { location?: { hostname?: string } }).location;
+  const location = (globalThis as { location?: { hostname?: string } })
+    .location;
   return location?.hostname ?? null;
 }
 
 function getApiBaseUrl() {
-  return getEnvValue('EXPO_PUBLIC_API_URL') ?? DEFAULT_API_BASE_URL;
+  return getEnvValue("EXPO_PUBLIC_API_URL") ?? DEFAULT_API_BASE_URL;
 }
 
 function resolveWsBaseUrl() {
-  const envWsUrl = getEnvValue('EXPO_PUBLIC_WS_URL');
+  const envWsUrl = getEnvValue("EXPO_PUBLIC_WS_URL");
 
   if (envWsUrl) {
     try {
       const parsed = new URL(envWsUrl);
 
       // Keep WS origin host-only. Namespace and socket path are configured separately.
-      parsed.pathname = '';
+      parsed.pathname = "";
 
-      const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+      const isLocalhost =
+        parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
 
       if (isLocalhost) {
-        if (Platform.OS === 'web') {
+        if (Platform.OS === "web") {
           const browserHost = getBrowserHost();
 
-          if (browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1') {
+          if (
+            browserHost &&
+            browserHost !== "localhost" &&
+            browserHost !== "127.0.0.1"
+          ) {
             parsed.hostname = browserHost;
           }
         } else {
@@ -104,13 +113,13 @@ function resolveWsBaseUrl() {
 
           if (expoHostIp) {
             parsed.hostname = expoHostIp;
-          } else if (Platform.OS === 'android') {
-            parsed.hostname = '10.0.2.2';
+          } else if (Platform.OS === "android") {
+            parsed.hostname = "10.0.2.2";
           }
         }
       }
 
-      return parsed.toString().replace(/\/$/, '');
+      return parsed.toString().replace(/\/$/, "");
     } catch {
       return envWsUrl;
     }
@@ -120,34 +129,35 @@ function resolveWsBaseUrl() {
 
   try {
     const parsed = new URL(apiUrl);
-    parsed.pathname = '';
+    parsed.pathname = "";
 
-    const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    const isLocalhost =
+      parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
 
     if (isLocalhost) {
       const expoHostIp = getExpoHostIp();
 
       if (expoHostIp) {
         parsed.hostname = expoHostIp;
-      } else if (Platform.OS === 'android') {
-        parsed.hostname = '10.0.2.2';
+      } else if (Platform.OS === "android") {
+        parsed.hostname = "10.0.2.2";
       }
     }
 
-    return parsed.toString().replace(/\/$/, '');
+    return parsed.toString().replace(/\/$/, "");
   } catch {
     return apiUrl;
   }
 }
 
 function resolveWsNamespace() {
-  const configured = getEnvValue('EXPO_PUBLIC_WS_NAMESPACE')?.trim();
+  const configured = getEnvValue("EXPO_PUBLIC_WS_NAMESPACE")?.trim();
 
   if (!configured) {
     return DEFAULT_WS_NAMESPACE;
   }
 
-  if (!configured.startsWith('/')) {
+  if (!configured.startsWith("/")) {
     return `/${configured}`;
   }
 
@@ -155,18 +165,18 @@ function resolveWsNamespace() {
 }
 
 function resolveWsPath() {
-  const configured = getEnvValue('EXPO_PUBLIC_WS_PATH')?.trim();
+  const configured = getEnvValue("EXPO_PUBLIC_WS_PATH")?.trim();
 
   if (!configured) {
     return DEFAULT_WS_PATH;
   }
 
   // Convert common misconfigurations like '/ws/socket.io' to the expected Socket.IO path.
-  if (configured.endsWith('/socket.io')) {
+  if (configured.endsWith("/socket.io")) {
     return DEFAULT_WS_PATH;
   }
 
-  if (!configured.startsWith('/')) {
+  if (!configured.startsWith("/")) {
     return `/${configured}`;
   }
 
@@ -174,13 +184,16 @@ function resolveWsPath() {
 }
 
 function resolveWsTransports() {
-  const configured = getEnvValue('EXPO_PUBLIC_WS_TRANSPORTS')?.trim();
+  const configured = getEnvValue("EXPO_PUBLIC_WS_TRANSPORTS")?.trim();
 
   if (configured) {
     const normalized = configured
-      .split(',')
+      .split(",")
       .map((item) => item.trim().toLowerCase())
-      .filter((item): item is 'polling' | 'websocket' => item === 'polling' || item === 'websocket');
+      .filter(
+        (item): item is "polling" | "websocket" =>
+          item === "polling" || item === "websocket",
+      );
 
     if (normalized.length > 0) {
       return normalized;
@@ -188,15 +201,17 @@ function resolveWsTransports() {
   }
 
   // In Expo/React Native, starting with polling is usually more reliable than websocket-first.
-  return Platform.OS === 'web' ? ['websocket', 'polling'] : ['polling', 'websocket'];
+  return Platform.OS === "web"
+    ? ["websocket", "polling"]
+    : ["polling", "websocket"];
 }
 
 function shouldAllowAnonymousWs() {
-  return isTruthyEnv(getEnvValue('EXPO_PUBLIC_WS_ALLOW_ANONYMOUS'));
+  return isTruthyEnv(getEnvValue("EXPO_PUBLIC_WS_ALLOW_ANONYMOUS"));
 }
 
 function isRealtimeDebugEnabled() {
-  return isTruthyEnv(getEnvValue('EXPO_PUBLIC_WS_DEBUG'));
+  return isTruthyEnv(getEnvValue("EXPO_PUBLIC_WS_DEBUG"));
 }
 
 function logRealtimeDebug(message: string, payload?: unknown) {
@@ -205,7 +220,7 @@ function logRealtimeDebug(message: string, payload?: unknown) {
   }
 
   // eslint-disable-next-line no-console
-  console.log(`[realtime] ${message}`, payload ?? '');
+  console.log(`[realtime] ${message}`, payload ?? "");
 }
 
 function syncJoinedRooms() {
@@ -214,8 +229,8 @@ function syncJoinedRooms() {
   }
 
   joinedRooms.forEach((room) => {
-    socket?.emit('system.join_room', { room });
-    logRealtimeDebug('rejoin room', room);
+    socket?.emit("system.join_room", { room });
+    logRealtimeDebug("rejoin room", room);
   });
 }
 
@@ -240,7 +255,7 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
   const namespace = resolveWsNamespace();
   const path = resolveWsPath();
 
-  logRealtimeDebug('connecting', {
+  logRealtimeDebug("connecting", {
     platform: Platform.OS,
     baseUrl,
     namespace,
@@ -268,10 +283,10 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
         },
   });
 
-  socket.on('connect', () => {
+  socket.on("connect", () => {
     connectErrors = 0;
     syncJoinedRooms();
-    logRealtimeDebug('connected', {
+    logRealtimeDebug("connected", {
       id: socket?.id,
       baseUrl,
       namespace,
@@ -280,21 +295,21 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
     });
   });
 
-  socket.on('connect_error', (error: unknown) => {
+  socket.on("connect_error", (error: unknown) => {
     connectErrors += 1;
-    logRealtimeDebug('connect_error', error);
+    logRealtimeDebug("connect_error", error);
   });
 
-  socket.on('disconnect', (reason: unknown) => {
-    logRealtimeDebug('disconnected', reason);
+  socket.on("disconnect", (reason: unknown) => {
+    logRealtimeDebug("disconnected", reason);
   });
 
-  socket.io.on('reconnect_attempt', (attempt) => {
-    logRealtimeDebug('reconnect_attempt', attempt);
+  socket.io.on("reconnect_attempt", (attempt) => {
+    logRealtimeDebug("reconnect_attempt", attempt);
   });
 
-  socket.io.on('reconnect', (attempt) => {
-    logRealtimeDebug('reconnect', attempt);
+  socket.io.on("reconnect", (attempt) => {
+    logRealtimeDebug("reconnect", attempt);
   });
 
   return socket;
@@ -317,14 +332,14 @@ export function isRealtimeConnected() {
 
 export function joinRealtimeRoom(room: string) {
   joinedRooms.add(room);
-  socket?.emit('system.join_room', { room });
-  logRealtimeDebug('join room', room);
+  socket?.emit("system.join_room", { room });
+  logRealtimeDebug("join room", room);
 }
 
 export function leaveRealtimeRoom(room: string) {
   joinedRooms.delete(room);
-  socket?.emit('system.leave_room', { room });
-  logRealtimeDebug('leave room', room);
+  socket?.emit("system.leave_room", { room });
+  logRealtimeDebug("leave room", room);
 }
 
 export function emitRealtime<T>(event: string, payload: T) {
@@ -332,7 +347,10 @@ export function emitRealtime<T>(event: string, payload: T) {
   logRealtimeDebug(`emit ${event}`, payload);
 }
 
-export function onRealtime<T = unknown>(event: string, handler: RealtimeHandler<T>) {
+export function onRealtime<T = unknown>(
+  event: string,
+  handler: RealtimeHandler<T>,
+) {
   const wrapped = (payload: T) => {
     logRealtimeDebug(`on ${event}`, payload);
     handler(payload);
@@ -346,9 +364,9 @@ export function onRealtime<T = unknown>(event: string, handler: RealtimeHandler<
 }
 
 export function emitChatSend(payload: { campaignId: number; message: string }) {
-  emitRealtime('chat.send', payload);
+  emitRealtime("chat.send", payload);
 }
 
 export function onChatMessageCreated<T = unknown>(handler: RealtimeHandler<T>) {
-  return onRealtime<T>('chat.message.created', handler);
+  return onRealtime<T>("chat.message.created", handler);
 }

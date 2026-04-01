@@ -3,14 +3,9 @@
   "compilerOptions": {
     "strict": true,
     "baseUrl": ".",
-    "types": [
-      "nativewind/types",
-      "jest"
-    ],
+    "types": ["nativewind/types", "jest"],
     "paths": {
-      "@/*": [
-        "src/*"
-      ]
+      "@/*": ["src/*"]
     }
   },
   "include": [

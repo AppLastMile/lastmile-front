@@ -1,3 +1,3 @@
-import { MapScreen } from '@/modules/map/screens/MapScreen';
+import { MapScreen } from "@/modules/map/screens/MapScreen";
 
 export default MapScreen;

@@ -1,5 +1,5 @@
-import { Platform } from 'react-native';
-import * as Location from 'expo-location';
+import { Platform } from "react-native";
+import * as Location from "expo-location";
 
 export type TrackingDevicePoint = {
   lat: number;
@@ -20,13 +20,13 @@ type TrackingSubscription = {
 
 export async function startTrackingLocationWatch(
   onPoint: (point: TrackingDevicePoint) => void,
-  options: TrackingWatchOptions = {}
+  options: TrackingWatchOptions = {},
 ): Promise<TrackingSubscription> {
   const { timeIntervalMs = 3000, distanceIntervalMeters = 10 } = options;
 
-  if (Platform.OS === 'web') {
+  if (Platform.OS === "web") {
     if (!navigator?.geolocation) {
-      throw new Error('Geolocalizacion no disponible en este navegador.');
+      throw new Error("Geolocalizacion no disponible en este navegador.");
     }
 
     const watchId = navigator.geolocation.watchPosition(
@@ -35,11 +35,13 @@ export async function startTrackingLocationWatch(
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           speed:
-            typeof position.coords.speed === 'number' && Number.isFinite(position.coords.speed)
+            typeof position.coords.speed === "number" &&
+            Number.isFinite(position.coords.speed)
               ? position.coords.speed
               : undefined,
           heading:
-            typeof position.coords.heading === 'number' && Number.isFinite(position.coords.heading)
+            typeof position.coords.heading === "number" &&
+            Number.isFinite(position.coords.heading)
               ? position.coords.heading
               : undefined,
           recordedAt: new Date(position.timestamp).toISOString(),
@@ -52,7 +54,7 @@ export async function startTrackingLocationWatch(
         enableHighAccuracy: false,
         maximumAge: timeIntervalMs,
         timeout: timeIntervalMs * 2,
-      }
+      },
     );
 
     return {
@@ -62,8 +64,8 @@ export async function startTrackingLocationWatch(
 
   const { status } = await Location.requestForegroundPermissionsAsync();
 
-  if (status !== 'granted') {
-    throw new Error('Permiso de ubicacion denegado.');
+  if (status !== "granted") {
+    throw new Error("Permiso de ubicacion denegado.");
   }
 
   const subscription = await Location.watchPositionAsync(
@@ -77,16 +79,18 @@ export async function startTrackingLocationWatch(
         lat: location.coords.latitude,
         lng: location.coords.longitude,
         speed:
-          typeof location.coords.speed === 'number' && Number.isFinite(location.coords.speed)
+          typeof location.coords.speed === "number" &&
+          Number.isFinite(location.coords.speed)
             ? location.coords.speed
             : undefined,
         heading:
-          typeof location.coords.heading === 'number' && Number.isFinite(location.coords.heading)
+          typeof location.coords.heading === "number" &&
+          Number.isFinite(location.coords.heading)
             ? location.coords.heading
             : undefined,
         recordedAt: new Date(location.timestamp).toISOString(),
       });
-    }
+    },
   );
 
   return {

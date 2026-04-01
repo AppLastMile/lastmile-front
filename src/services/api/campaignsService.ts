@@ -1,8 +1,8 @@
-import type { PaginatedResponse } from '@/types/pagination';
+import type { PaginatedResponse } from "@/types/pagination";
 
-import { httpClient } from './httpClient';
+import { httpClient } from "./httpClient";
 
-export type CampaignType = 'money' | 'physical_items' | 'mixed';
+export type CampaignType = "money" | "physical_items" | "mixed";
 
 export type Campaign = {
   id: number;
@@ -25,12 +25,14 @@ export type CreateCampaignPayload = {
 };
 
 export async function getCampaigns(page = 1, limit = 50) {
-  return httpClient<PaginatedResponse<Campaign>>(`/campaigns?page=${page}&limit=${limit}`);
+  return httpClient<PaginatedResponse<Campaign>>(
+    `/campaigns?page=${page}&limit=${limit}`,
+  );
 }
 
 export async function createCampaign(payload: CreateCampaignPayload) {
-  return httpClient<Campaign>('/campaigns', {
-    method: 'POST',
+  return httpClient<Campaign>("/campaigns", {
+    method: "POST",
     body: payload,
   });
 }

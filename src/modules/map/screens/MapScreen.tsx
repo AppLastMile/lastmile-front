@@ -1,201 +1,179 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import * as Location from 'expo-location';
-import { getSocket } from '@/services/realtime/socket';
+import { View, StyleSheet } from "react-native";
+import MapView, { Marker } from "react-native-maps";
+import { useLocalSearchParams } from "expo-router";
+import { useEffect, useState, useCallback, useRef } from "react";
+import * as Location from "expo-location";
 
-import {
-  ActivityIndicator,
-  Pressable,
-  SafeAreaView,
-  Text,
-  View,
-} from 'react-native';
-import MapView, { Marker, UrlTile, type Region } from 'react-native-maps';
-import { useRouter } from 'expo-router';
-
-import { useMissionStatus } from '@/modules/missions/hooks/useMissionStatus';
-
-import {
-  findColombianCityByName,
-  type ColombianCity,
-} from '@/modules/missions/constants/colombianCities';
-
-import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
-
-import {
-  type EventSummary,
-  getEvents,
-} from '@/services/api/eventsService';
-
-const COLOMBIA_REGION: Region = {
-  latitude: 4.5709,
-  longitude: -74.2973,
-  latitudeDelta: 13,
-  longitudeDelta: 13,
-};
-
-type EventWithCity = {
-  event: EventSummary;
-  city: ColombianCity;
-};
+import { useTracking } from "@/modules/map/hooks/useTracking";
+import { useSocketTracking } from "@/modules/map/hooks/useSocketTracking";
+import { getPickupPoints } from "@/services/api/logisticsService";
 
 export function MapScreen() {
-  const router = useRouter();
-  const { getStatus } = useMissionStatus();
+  const { pickupPointId, shipmentId } = useLocalSearchParams();
 
-  const { currentUser } = useAuthSession();
-  const isDonor = currentUser?.role === 'donor';
+  const mapRef = useRef<MapView | null>(null);
 
-  const [filter, setFilter] = useState<'all' | 'available' | 'taken'>('all');
+  // 🔥 convertir params a number
+  const shipmentIdNum = shipmentId ? Number(shipmentId) : undefined;
+  const pickupPointIdNum = pickupPointId ? Number(pickupPointId) : undefined;
 
-  const [mapRef, setMapRef] = useState<MapView | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [events, setEvents] = useState<EventSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [region, setRegion] = useState({
+    latitude: 4.6097,
+    longitude: -74.0817,
+    latitudeDelta: 0.01,
+    longitudeDelta: 0.01,
+  });
 
-  const [pickupPoints, setPickupPoints] = useState<any[]>([]);
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
+  const [pickupPoint, setPickupPoint] = useState<any>(null);
 
-  const [myLocation, setMyLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  const [volunteers, setVolunteers] = useState<{
+    [key: string]: { latitude: number; longitude: number };
+  }>({});
 
-  // 🔥 REALTIME CORREGIDO
-  useEffect(() => {
-    const socket = getSocket();
-    const campaignId = 1;
+  // =========================
+  // 🔥 TRACKING REAL
+  // =========================
+  useTracking(shipmentIdNum);
 
-    // 🔥 DEBUG conexión
-    socket.on('connect', () => {
-      console.log('🟢 Socket conectado:', socket.id);
+  const handleTracking = useCallback((data: any) => {
+    if (!data.userId) return;
 
-      // 👉 suscribirse SOLO cuando conecta
-      socket.emit('campaign.subscribe', { campaignId });
-    });
-
-    socket.on('disconnect', () => {
-      console.log('🔴 Socket desconectado');
-    });
-
-    // 🔥 EVENTO REALTIME
-    const handleNewPoint = (point: any) => {
-      console.log('🔥 Nuevo punto realtime:', point);
-
-      setPickupPoints((prev) => [...prev, point]);
-    };
-
-    socket.on('pickup_point.created', handleNewPoint);
-
-    return () => {
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('pickup_point.created', handleNewPoint);
-    };
+    setVolunteers((prev) => ({
+      ...prev,
+      [data.userId]: {
+        latitude: data.lat,
+        longitude: data.lng,
+      },
+    }));
   }, []);
 
-  // cargar eventos
-  const loadEvents = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  useSocketTracking(shipmentIdNum ?? 0, handleTracking);
 
-    try {
-      const response = await getEvents({ page: 1, limit: 100 });
-      setEvents(response.data);
-    } catch {
-      setError('No fue posible cargar eventos.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
+  // =========================
+  // 📦 CARGAR PICKUP POINT REAL
+  // =========================
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    async function loadPickupPoint() {
+      try {
+        if (!pickupPointIdNum) return;
 
-  // ubicación
-  useEffect(() => {
-    let isMounted = true;
+        const res = await getPickupPoints();
 
-    async function startLocationTracking() {
-      const { status } =
-        await Location.requestForegroundPermissionsAsync();
+        const point = res.data.find((p: any) => p.id === pickupPointIdNum);
 
-      if (status !== 'granted') return;
+        if (!point) return;
 
-      const current = await Location.getCurrentPositionAsync({});
+        setPickupPoint(point);
 
-      if (isMounted) {
-        setMyLocation({
-          latitude: current.coords.latitude,
-          longitude: current.coords.longitude,
+        setRegion({
+          latitude: point.latitude,
+          longitude: point.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
         });
+      } catch (e) {
+        console.log("❌ error cargando pickup point", e);
       }
     }
 
-    startLocationTracking();
+    loadPickupPoint();
+  }, [pickupPointIdNum]);
 
-    return () => {
-      isMounted = false;
+  // =========================
+  // 📍 UBICACIÓN USUARIO
+  // =========================
+  useEffect(() => {
+    const getLocation = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== "granted") {
+        console.log("❌ permiso de ubicación denegado");
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+
+      const { latitude, longitude } = location.coords;
+
+      const newRegion = {
+        latitude,
+        longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+
+      setRegion(newRegion);
+      setCurrentLocation({ latitude, longitude });
     };
+
+    getLocation();
   }, []);
 
-  // mapear eventos
-  const mappedEvents = useMemo<EventWithCity[]>(
-    () =>
-      events
-        .map((eventItem) => {
-          const city = findColombianCityByName(eventItem.city);
-          if (!city) return null;
-          return { event: eventItem, city };
-        })
-        .filter(
-          (eventItem): eventItem is EventWithCity => eventItem !== null
-        ),
-    [events]
-  );
+  // =========================
+  // 🧠 AJUSTAR CÁMARA
+  // =========================
+  useEffect(() => {
+    const coords = [
+      ...(pickupPoint
+        ? [{ latitude: pickupPoint.latitude, longitude: pickupPoint.longitude }]
+        : []),
+      ...(currentLocation ? [currentLocation] : []),
+      ...Object.values(volunteers),
+    ];
 
-  const filteredEvents = useMemo(() => {
-    return mappedEvents;
-  }, [mappedEvents]);
+    if (coords.length < 2) return;
+
+    mapRef.current?.fitToCoordinates(coords, {
+      edgePadding: {
+        top: 100,
+        right: 100,
+        bottom: 100,
+        left: 100,
+      },
+      animated: true,
+    });
+  }, [pickupPoint, currentLocation, volunteers]);
+
+  // 🔍 DEBUG
+  console.log("📦 shipmentId:", shipmentIdNum);
+  console.log("📍 pickupPointId:", pickupPointIdNum);
+  console.log("👥 volunteers:", Object.keys(volunteers).length);
 
   return (
-    <SafeAreaView className="flex-1">
-      <MapView initialRegion={COLOMBIA_REGION} style={{ flex: 1 }}>
-        <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+    <View style={StyleSheet.absoluteFillObject}>
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFillObject}
+        initialRegion={region}
+      >
+        {/* 🔵 TU UBICACIÓN */}
+        {currentLocation && (
+          <Marker coordinate={currentLocation} title="Tú" pinColor="blue" />
+        )}
 
-        {/* EVENTOS */}
-        {filteredEvents.map(({ event, city }) => (
+        {/* 🟢 PUNTO REAL */}
+        {pickupPoint && (
           <Marker
-            key={event.id}
             coordinate={{
-              latitude: city.region.latitude,
-              longitude: city.region.longitude,
+              latitude: pickupPoint.latitude,
+              longitude: pickupPoint.longitude,
             }}
-            title={event.name}
-          />
-        ))}
-
-        {/* 🔥 PICKUP POINTS REALTIME */}
-        {pickupPoints.map((point, index) => (
-          <Marker
-            key={`pickup-${index}`}
-            coordinate={{
-              latitude: point.latitude,
-              longitude: point.longitude,
-            }}
-            title={point.name}
-            description={point.description}
+            title={pickupPoint.name}
             pinColor="green"
           />
-        ))}
-
-        {/* UBICACIÓN */}
-        {myLocation && (
-          <Marker coordinate={myLocation} title="Tu ubicación" />
         )}
-      </MapView>
 
-      {isLoading && <ActivityIndicator />}
-    </SafeAreaView>
+        {/* 🔴 VOLUNTARIOS */}
+        {Object.entries(volunteers).map(([userId, location]) => (
+          <Marker
+            key={userId}
+            coordinate={location}
+            title={`Voluntario ${userId}`}
+            pinColor="red"
+          />
+        ))}
+      </MapView>
+    </View>
   );
 }

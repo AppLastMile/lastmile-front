@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-export type MissionStatus = 'available' | 'taken' | 'delivered';
+export type MissionStatus = "available" | "taken" | "delivered";
 
 let statusState: Record<string, MissionStatus> = {};
 
@@ -17,7 +17,7 @@ export function useMissionStatus() {
   };
 
   const getStatus = (id: string): MissionStatus => {
-    return statusMap[id] || 'available';
+    return statusMap[id] || "available";
   };
 
   return {

@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
-import { AppScreen } from '@/components/ui/AppScreen';
-import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import { AppScreen } from "@/components/ui/AppScreen";
+import { type EventSummary, getEvents } from "@/services/api/eventsService";
+
+import { useNotifications } from "@/modules/notifications/hooks/useNotifications";
+import { useAuthSession } from "@/modules/auth/context/AuthSessionContext";
 
 export function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const { currentUser } = useAuthSession();
+
+  useNotifications(currentUser?.id?.toString());
 
   const loadEvents = useCallback(async () => {
     setIsLoading(true);
@@ -17,7 +24,9 @@ export function HomeScreen() {
       const response = await getEvents({ page: 1, limit: 10 });
       setEvents(response.data);
     } catch {
-      setError('No fue posible cargar eventos. Revisa la conexion con backend.');
+      setError(
+        "No fue posible cargar eventos. Revisa la conexión con backend.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -29,51 +38,80 @@ export function HomeScreen() {
 
   return (
     <AppScreen>
-      <View className='rounded-2xl border border-[#d8e7ff] bg-white p-5'>
-        <Text className='text-2xl font-extrabold text-[#15325c]'>Inicio</Text>
-        <Text className='mt-2 text-sm text-[#526887]'>
-          Resumen de eventos activos registrados en el backend.
-        </Text>
+      <View className="flex-1 gap-6">
+        {/* 🔵 HEADER */}
+        <View>
+          <Text className="text-3xl font-extrabold text-[#15325c]">
+            👋 Inicio
+          </Text>
 
+          <Text className="mt-1 text-sm text-[#526887]">
+            Eventos activos registrados en el sistema
+          </Text>
+        </View>
+
+        {/* 🔄 BOTÓN ACTUALIZAR */}
         <Pressable
-          className='mt-4 self-start rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90'
+          className="self-start rounded-full bg-[#1f5fe0] px-5 py-2 active:opacity-90"
           onPress={loadEvents}
         >
-          <Text className='font-semibold text-white'>Actualizar</Text>
+          <Text className="font-semibold text-white">Actualizar</Text>
         </Pressable>
 
-        {isLoading ? (
-          <View className='mt-4 flex-row items-center'>
-            <ActivityIndicator color='#1f5fe0' size='small' />
-            <Text className='ml-2 text-sm text-[#4d648a]'>Cargando eventos...</Text>
+        {/* 🔄 LOADING */}
+        {isLoading && (
+          <View className="flex-row items-center gap-2">
+            <ActivityIndicator color="#1f5fe0" size="small" />
+            <Text className="text-sm text-[#4d648a]">Cargando eventos...</Text>
           </View>
-        ) : null}
+        )}
 
-        {error ? (
-          <Text className='mt-4 rounded-xl bg-[#ffecef] px-3 py-2 text-sm text-[#a1263d]'>
+        {/* ❌ ERROR */}
+        {error && (
+          <Text className="rounded-xl bg-[#ffecef] px-3 py-3 text-sm text-[#a1263d]">
             {error}
           </Text>
-        ) : null}
+        )}
 
-        {!isLoading && !error ? (
-          <View className='mt-4 gap-2'>
+        {/* 📦 LISTA DE EVENTOS */}
+        {!isLoading && !error && (
+          <View className="gap-3">
             {events.length === 0 ? (
-              <Text className='text-sm text-[#5b7190]'>Aun no hay eventos registrados.</Text>
+              <View className="rounded-2xl bg-[#f4f7fb] p-4">
+                <Text className="text-sm text-[#5b7190]">
+                  Aún no hay eventos registrados.
+                </Text>
+              </View>
             ) : (
               events.map((eventItem) => (
                 <View
-                  className='rounded-xl border border-[#e1ebff] bg-[#f8fbff] px-3 py-3'
                   key={eventItem.id}
+                  className="rounded-2xl bg-white p-4 shadow-sm"
+                  style={{
+                    shadowColor: "#000",
+                    shadowOpacity: 0.05,
+                    shadowRadius: 6,
+                    elevation: 2,
+                  }}
                 >
-                  <Text className='text-base font-bold text-[#173761]'>{eventItem.name}</Text>
-                  <Text className='mt-1 text-sm text-[#486387]'>
-                    {eventItem.city} · {eventItem.disasterType}
+                  {/* Nombre */}
+                  <Text className="text-lg font-bold text-[#173761]">
+                    {eventItem.name}
+                  </Text>
+
+                  {/* Info */}
+                  <Text className="mt-1 text-sm text-[#486387]">
+                    📍 {eventItem.city}
+                  </Text>
+
+                  <Text className="mt-1 text-sm text-[#486387]">
+                    🌪️ {eventItem.disasterType}
                   </Text>
                 </View>
               ))
             )}
           </View>
-        ) : null}
+        )}
       </View>
     </AppScreen>
   );

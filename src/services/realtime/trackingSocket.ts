@@ -1,8 +1,8 @@
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
-import { io, type Socket } from 'socket.io-client';
+import Constants from "expo-constants";
+import { Platform } from "react-native";
+import { io, type Socket } from "socket.io-client";
 
-import type { ShipmentLocationPoint } from '@/services/api/trackingApi';
+import type { ShipmentLocationPoint } from "@/services/api/trackingApi";
 
 type TrackingAuth = {
   token?: string;
@@ -22,11 +22,11 @@ type PickupPoint = {
 type PickupPointHandler = (point: PickupPoint) => void;
 
 type TrackingConnectionStatus =
-  | 'idle'
-  | 'connecting'
-  | 'connected'
-  | 'disconnected'
-  | 'error';
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "error";
 
 type TrackingStatusHandler = (status: TrackingConnectionStatus) => void;
 type TrackingLocationHandler = (payload: ShipmentLocationPoint) => void;
@@ -40,14 +40,14 @@ type TrackingHandlers = {
 };
 
 type KnownEnvKey =
-  | 'EXPO_PUBLIC_API_URL'
-  | 'EXPO_PUBLIC_WS_URL'
-  | 'EXPO_PUBLIC_WS_NAMESPACE'
-  | 'EXPO_PUBLIC_WS_PATH';
+  | "EXPO_PUBLIC_API_URL"
+  | "EXPO_PUBLIC_WS_URL"
+  | "EXPO_PUBLIC_WS_NAMESPACE"
+  | "EXPO_PUBLIC_WS_PATH";
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
-const DEFAULT_WS_NAMESPACE = '/ws';
-const DEFAULT_WS_PATH = '/socket.io';
+const DEFAULT_API_BASE_URL = "http://localhost:3000/api/v1";
+const DEFAULT_WS_NAMESPACE = "/ws";
+const DEFAULT_WS_PATH = "/socket.io";
 
 const ENV: Record<KnownEnvKey, string | undefined> = {
   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
@@ -61,7 +61,6 @@ let activeCampaignId: string | null = null;
 let activeShipmentId: number | null = null;
 let handlers: TrackingHandlers = {};
 
-
 // ================= HELPERS =================
 
 function getEnv(key: KnownEnvKey) {
@@ -73,49 +72,45 @@ function getExpoHostIp() {
     (Constants as any)?.expoConfig?.hostUri ??
     (Constants as any)?.expoGoConfig?.debuggerHost;
 
-  return hostUri ? hostUri.split(':')[0] : null;
+  return hostUri ? hostUri.split(":")[0] : null;
 }
 
 function resolveWsBaseUrl() {
-  const envUrl = getEnv('EXPO_PUBLIC_WS_URL');
+  const envUrl = getEnv("EXPO_PUBLIC_WS_URL");
 
   if (envUrl) {
     try {
       const parsed = new URL(envUrl);
-      parsed.pathname = '';
+      parsed.pathname = "";
 
-      if (
-        parsed.hostname === 'localhost' ||
-        parsed.hostname === '127.0.0.1'
-      ) {
-        if (Platform.OS !== 'web') {
+      if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+        if (Platform.OS !== "web") {
           parsed.hostname =
             getExpoHostIp() ??
-            (Platform.OS === 'android' ? '10.0.2.2' : parsed.hostname);
+            (Platform.OS === "android" ? "10.0.2.2" : parsed.hostname);
         }
       }
 
-      return parsed.toString().replace(/\/$/, '');
+      return parsed.toString().replace(/\/$/, "");
     } catch {
       return envUrl;
     }
   }
 
-  return getEnv('EXPO_PUBLIC_API_URL') ?? DEFAULT_API_BASE_URL;
+  return getEnv("EXPO_PUBLIC_API_URL") ?? DEFAULT_API_BASE_URL;
 }
 
 function resolveWsNamespace() {
-  const ns = getEnv('EXPO_PUBLIC_WS_NAMESPACE');
+  const ns = getEnv("EXPO_PUBLIC_WS_NAMESPACE");
   if (!ns) return DEFAULT_WS_NAMESPACE;
-  return ns.startsWith('/') ? ns : `/${ns}`;
+  return ns.startsWith("/") ? ns : `/${ns}`;
 }
 
 function resolveWsPath() {
-  const p = getEnv('EXPO_PUBLIC_WS_PATH');
+  const p = getEnv("EXPO_PUBLIC_WS_PATH");
   if (!p) return DEFAULT_WS_PATH;
-  return p.startsWith('/') ? p : `/${p}`;
+  return p.startsWith("/") ? p : `/${p}`;
 }
-
 
 // ================= CORE =================
 
@@ -125,16 +120,15 @@ function setStatus(status: TrackingConnectionStatus) {
 
 function subscribeShipmentIfNeeded() {
   if (socket?.connected && activeShipmentId) {
-    socket.emit('shipment.subscribe', { shipmentId: activeShipmentId });
+    socket.emit("shipment.subscribe", { shipmentId: activeShipmentId });
   }
 }
 
 function subscribeCampaignIfNeeded() {
   if (socket?.connected && activeCampaignId) {
-    socket.emit('campaign.subscribe', { campaignId: activeCampaignId });
+    socket.emit("campaign.subscribe", { campaignId: activeCampaignId });
   }
 }
-
 
 // ================= PUBLIC =================
 
@@ -145,7 +139,7 @@ export function subscribeCampaign(campaignId: string) {
 
 export function connectTrackingSocket(
   auth: TrackingAuth = {},
-  nextHandlers: TrackingHandlers = {}
+  nextHandlers: TrackingHandlers = {},
 ) {
   handlers = { ...handlers, ...nextHandlers };
 
@@ -163,41 +157,41 @@ export function connectTrackingSocket(
   // 🔥 crear socket
   socket = io(`${resolveWsBaseUrl()}${resolveWsNamespace()}`, {
     path: resolveWsPath(),
-    transports: ['websocket', 'polling'],
+    transports: ["websocket", "polling"],
     auth,
     reconnection: true,
   });
 
   // ================= CONNECTION =================
 
-  socket.on('connect', () => {
-    setStatus('connected');
+  socket.on("connect", () => {
+    setStatus("connected");
 
     subscribeShipmentIfNeeded();
     subscribeCampaignIfNeeded(); // 🔥 clave
   });
 
-  socket.on('disconnect', () => {
-    setStatus('disconnected');
+  socket.on("disconnect", () => {
+    setStatus("disconnected");
   });
 
-  socket.on('connect_error', () => {
-    setStatus('error');
-    handlers.onError?.('Error conectando WebSocket');
+  socket.on("connect_error", () => {
+    setStatus("error");
+    handlers.onError?.("Error conectando WebSocket");
   });
 
   // ================= TRACKING =================
 
-  socket.off('shipment.location.changed');
-  socket.on('shipment.location.changed', (payload: ShipmentLocationPoint) => {
+  socket.off("shipment.location.changed");
+  socket.on("shipment.location.changed", (payload: ShipmentLocationPoint) => {
     handlers.onLocation?.(payload);
   });
 
   // ================= PICKUP POINTS =================
 
-  socket.off('pickup_point.created'); // 🔥 evita duplicados
+  socket.off("pickup_point.created"); // 🔥 evita duplicados
 
-  socket.on('pickup_point.created', (payload: PickupPoint) => {
+  socket.on("pickup_point.created", (payload: PickupPoint) => {
     if (!payload?.id) return;
 
     handlers.onPickupPointCreated?.(payload);
@@ -206,13 +200,11 @@ export function connectTrackingSocket(
   return socket;
 }
 
-
 // ================= HANDLERS =================
 
 export function setTrackingSocketHandlers(nextHandlers: TrackingHandlers) {
   handlers = { ...handlers, ...nextHandlers };
 }
-
 
 // ================= CLEANUP =================
 

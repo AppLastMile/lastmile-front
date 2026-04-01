@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
-import { getPickupPoints } from '@/services/api/pickupPointsService';
+import { useEffect, useState } from "react";
+import { getPickupPoints } from "@/services/api/pickupPointsService";
 import {
   connectTrackingSocket,
   subscribeCampaign,
   setTrackingSocketHandlers,
-} from '@/services/realtime/trackingSocket';
+} from "@/services/realtime/trackingSocket";
 
 type PickupPoint = {
   id: string;

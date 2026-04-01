@@ -1,38 +1,38 @@
-import { createCampaign, getCampaigns } from './campaignsService';
-import { httpClient } from './httpClient';
+import { createCampaign, getCampaigns } from "./campaignsService";
+import { httpClient } from "./httpClient";
 
-jest.mock('./httpClient', () => ({
+jest.mock("./httpClient", () => ({
   httpClient: jest.fn(),
 }));
 
 const mockedHttpClient = httpClient as jest.MockedFunction<typeof httpClient>;
 
-describe('campaignsService', () => {
+describe("campaignsService", () => {
   beforeEach(() => {
     mockedHttpClient.mockReset();
   });
 
-  it('gets campaigns with defaults', async () => {
+  it("gets campaigns with defaults", async () => {
     mockedHttpClient.mockResolvedValueOnce({ data: [] } as never);
 
     await getCampaigns();
 
-    expect(mockedHttpClient).toHaveBeenCalledWith('/campaigns?page=1&limit=50');
+    expect(mockedHttpClient).toHaveBeenCalledWith("/campaigns?page=1&limit=50");
   });
 
-  it('gets campaigns with custom pagination', async () => {
+  it("gets campaigns with custom pagination", async () => {
     mockedHttpClient.mockResolvedValueOnce({ data: [] } as never);
 
     await getCampaigns(2, 15);
 
-    expect(mockedHttpClient).toHaveBeenCalledWith('/campaigns?page=2&limit=15');
+    expect(mockedHttpClient).toHaveBeenCalledWith("/campaigns?page=2&limit=15");
   });
 
-  it('creates campaign', async () => {
+  it("creates campaign", async () => {
     const payload = {
-      name: 'Campana Norte',
-      description: 'Apoyo',
-      campaignType: 'money' as const,
+      name: "Campana Norte",
+      description: "Apoyo",
+      campaignType: "money" as const,
       goalMoney: 500000,
       eventId: 3,
       createdBy: 1,
@@ -42,8 +42,8 @@ describe('campaignsService', () => {
 
     await createCampaign(payload);
 
-    expect(mockedHttpClient).toHaveBeenCalledWith('/campaigns', {
-      method: 'POST',
+    expect(mockedHttpClient).toHaveBeenCalledWith("/campaigns", {
+      method: "POST",
       body: payload,
     });
   });

@@ -1,10 +1,10 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { View, Text, Pressable } from 'react-native';
-import { AppScreen } from '@/components/ui/AppScreen';
-import { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { View, Text, Pressable } from "react-native";
+import { AppScreen } from "@/components/ui/AppScreen";
+import { useEffect, useState } from "react";
 
-import { useMissionStatus } from '../../src/modules/missions/hooks/useMissionStatus';
-import { getEvents, type EventSummary } from '@/services/api/eventsService';
+import { useMissionStatus } from "../../src/modules/missions/hooks/useMissionStatus";
+import { getEvents, type EventSummary } from "@/services/api/eventsService";
 
 export default function MissionDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -20,15 +20,13 @@ export default function MissionDetailScreen() {
       try {
         const response = await getEvents({ page: 1, limit: 100 });
 
-        const found = response.data.find(
-          (e) => String(e.id) === String(id)
-        );
+        const found = response.data.find((e) => String(e.id) === String(id));
 
         if (found) {
           setEvent(found);
         }
       } catch (e) {
-        console.log('Error cargando detalle', e);
+        console.log("Error cargando detalle", e);
       }
     }
 
@@ -36,7 +34,7 @@ export default function MissionDetailScreen() {
   }, [id]);
 
   const handleAccept = () => {
-    updateMission(String(id), 'taken');
+    updateMission(String(id), "taken");
     router.back(); //  volver a missions o mapa
   };
 
@@ -53,54 +51,44 @@ export default function MissionDetailScreen() {
   return (
     <AppScreen>
       <View style={{ flex: 1, padding: 16 }}>
+        <Text style={{ fontSize: 22, fontWeight: "bold" }}>{event.name}</Text>
 
-        <Text style={{ fontSize: 22, fontWeight: 'bold' }}>
-          {event.name}
-        </Text>
+        <Text style={{ marginTop: 8, color: "gray" }}>📍 {event.city}</Text>
 
-        <Text style={{ marginTop: 8, color: 'gray' }}>
-          📍 {event.city}
-        </Text>
-
-        <Text style={{ marginTop: 16 }}>
-          {event.description}
-        </Text>
+        <Text style={{ marginTop: 16 }}>{event.description}</Text>
 
         <Text
           style={{
             marginTop: 16,
-            fontWeight: '600',
+            fontWeight: "600",
             color:
-              status === 'available'
-                ? 'green'
-                : status === 'taken'
-                ? 'blue'
-                : 'gray',
+              status === "available"
+                ? "green"
+                : status === "taken"
+                  ? "blue"
+                  : "gray",
           }}
         >
-          {status === 'available'
-            ? 'Disponible'
-            : status === 'taken'
-            ? 'Aceptada'
-            : 'Entregada'}
+          {status === "available"
+            ? "Disponible"
+            : status === "taken"
+              ? "Aceptada"
+              : "Entregada"}
         </Text>
 
         <Pressable
           onPress={handleAccept}
-          disabled={status !== 'available'}
+          disabled={status !== "available"}
           style={{
             marginTop: 30,
-            backgroundColor:
-              status === 'available' ? '#2563eb' : 'gray',
+            backgroundColor: status === "available" ? "#2563eb" : "gray",
             padding: 16,
             borderRadius: 12,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
-          <Text style={{ color: '#fff', fontWeight: 'bold' }}>
-            {status === 'available'
-              ? 'Aceptar misión'
-              : 'Ya aceptada'}
+          <Text style={{ color: "#fff", fontWeight: "bold" }}>
+            {status === "available" ? "Aceptar misión" : "Ya aceptada"}
           </Text>
         </Pressable>
       </View>

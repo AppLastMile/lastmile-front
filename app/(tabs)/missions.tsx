@@ -1,10 +1,10 @@
-import { MissionsScreen } from '@/modules/missions/screens/MissionsScreen';
-import { DonorCampaignsScreen } from '@/modules/campaigns/screens/DonorCampaignsScreen';
+import { MissionsScreen } from "@/modules/missions/screens/MissionsScreen";
+import { DonorCampaignsScreen } from "@/modules/campaigns/screens/DonorCampaignsScreen";
 
 export default function MissionsRoute() {
-  const fakeUser = { role: 'volunteer' };
+  const fakeUser = { role: "volunteer" };
 
-  if (fakeUser.role === 'donor') {
+  if (fakeUser.role === "donor") {
     return <DonorCampaignsScreen />;
   }
 
