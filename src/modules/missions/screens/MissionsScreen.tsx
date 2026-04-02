@@ -53,7 +53,7 @@ export function MissionsScreen() {
   // =========================
   // 🔥 REALTIME (CLAVE)
   // =========================
-  useRealtimeMissions((updatedShipment) => {
+  useRealtimeMissions(0, (updatedShipment: any) => {
     setShipments((prev) => {
       const exists = prev.find((s) => s.id === updatedShipment.id);
 

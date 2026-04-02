@@ -1,8 +1,6 @@
-import { apiClient } from "@/services/api/apiClient";
+import { httpClient } from "@/services/api/httpClient";
 
-export async function getPickupPoints(campaignId: string) {
-  const response = await apiClient.get(
-    `/campaigns/${campaignId}/pickup-points`,
-  );
-  return response.data;
+export async function getPickupPoints() {
+  const res = await httpClient("/logistics/pickup-points");
+  return res.data;
 }
