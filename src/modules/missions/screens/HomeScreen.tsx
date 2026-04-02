@@ -1,7 +1,7 @@
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-
-import { AppScreen } from '@/components/ui/AppScreen';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import {
   type EventSummary,
@@ -15,6 +15,19 @@ import {
   rememberJoinedEvent,
   rememberJoinedEvents,
 } from '@/services/state/joinedEventsMemory';
+
+type SetJoinedEventIds = React.Dispatch<React.SetStateAction<number[]>>;
+type SetTextState = React.Dispatch<React.SetStateAction<string | null>>;
+
+type ToggleSupportContext = {
+  alreadyJoined: boolean;
+  eventId: number;
+  events: EventSummary[];
+  logout: () => void;
+  setJoinedEventIds: SetJoinedEventIds;
+  setFeedback: SetTextState;
+  setError: SetTextState;
+};
 
 function getErrorMessage(error: unknown) {
   if (!(error instanceof Error)) {
@@ -138,27 +151,18 @@ export function HomeScreen() {
         setFeedback('Ahora estás apoyando este evento.');
       }
     } catch (error_) {
-      const status = getHttpStatusCode(error_);
-
-      if (!alreadyJoined && (status === 409 || isAlreadySupportingError(error_))) {
-        setJoinedEventIds((prev) => (prev.includes(eventId) ? prev : [...prev, eventId]));
-        const joinedEvent = events.find((eventItem) => eventItem.id === eventId);
-
-        if (joinedEvent) {
-          rememberJoinedEvent(joinedEvent);
+      handleToggleSupportError(
+        error_,
+        {
+          alreadyJoined,
+          eventId,
+          events,
+          logout,
+          setJoinedEventIds,
+          setFeedback,
+          setError,
         }
-
-        setFeedback('Ya apoyas este evento.');
-      } else if (alreadyJoined && status === 404) {
-        setJoinedEventIds((prev) => prev.filter((id) => id !== eventId));
-        forgetJoinedEvent(eventId);
-        setFeedback('Ya no estabas apoyando este evento.');
-      } else if (status === 401) {
-        logout();
-        setError('Tu sesión expiró. Inicia sesión nuevamente.');
-      } else {
-        setError(`No fue posible actualizar el apoyo. ${getErrorMessage(error_)}`);
-      }
+      );
     } finally {
       setPendingEventId(null);
     }
@@ -169,36 +173,111 @@ export function HomeScreen() {
   }, [loadEvents]);
 
   return (
-    <AppScreen>
-      <View className='rounded-2xl border border-[#d8e7ff] bg-white p-5'>
-        <Text className='text-2xl font-extrabold text-[#15325c]'>Inicio</Text>
-        <Text className='mt-2 text-sm text-[#526887]'>
-          Resumen de eventos activos registrados en el backend.
-        </Text>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 20,
+            paddingTop: 16,
+            paddingBottom: 12,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View
+              style={{
+                backgroundColor: '#dce8ff',
+                borderRadius: 16,
+                padding: 12,
+                marginRight: 12,
+              }}
+            >
+              <Ionicons color='#1e73fa' name='home' size={22} />
+            </View>
+            <View>
+              <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Inicio</Text>
+            </View>
+          </View>
+          <View
+            style={{
+              backgroundColor: '#e8f0ff',
+              borderRadius: 999,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+          >
+            <Text style={{ fontSize: 11, fontWeight: '800', color: '#1f4fb6', letterSpacing: 0.5 }}>
+              EVENTOS ACTIVOS
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ paddingHorizontal: 20 }}>
+          <Text style={{ fontSize: 13, color: '#60779a', marginBottom: 12 }}>
+            Apoya eventos de emergencia y haz seguimiento a tus participaciones.
+          </Text>
+        </View>
 
         {isLoading ? (
-          <View className='mt-4 flex-row items-center'>
-            <ActivityIndicator color='#1f5fe0' size='small' />
-            <Text className='ml-2 text-sm text-[#4d648a]'>Cargando eventos...</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 }}>
+            <ActivityIndicator color='#1e73fa' size='small' />
+            <Text style={{ marginLeft: 8, fontSize: 13, color: '#50698e' }}>Cargando eventos...</Text>
           </View>
         ) : null}
 
         {error ? (
-          <Text className='mt-4 rounded-xl bg-[#ffecef] px-3 py-2 text-sm text-[#a1263d]'>
-            {error}
-          </Text>
+          <View
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 12,
+              backgroundColor: '#ffecef',
+              borderRadius: 14,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+            }}
+          >
+            <Text style={{ fontSize: 13, color: '#a0253c' }}>{error}</Text>
+          </View>
         ) : null}
 
         {feedback ? (
-          <Text className='mt-3 rounded-xl bg-[#e8f7ec] px-3 py-2 text-sm text-[#166534]'>
-            {feedback}
-          </Text>
+          <View
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 12,
+              backgroundColor: '#e8f7ec',
+              borderRadius: 14,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+            }}
+          >
+            <Text style={{ fontSize: 13, color: '#166534' }}>{feedback}</Text>
+          </View>
         ) : null}
 
         {!isLoading && !error ? (
-          <View className='mt-4 gap-2'>
+          <View style={{ paddingHorizontal: 20, gap: 12 }}>
             {events.length === 0 ? (
-              <Text className='text-sm text-[#5b7190]'>Aun no hay eventos registrados.</Text>
+              <View
+                style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 20,
+                  padding: 28,
+                  alignItems: 'center',
+                  shadowColor: '#163457',
+                  shadowOpacity: 0.07,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowRadius: 10,
+                  elevation: 3,
+                }}
+              >
+                <FontAwesome5 color='#c5d3e8' name='hands-helping' size={36} />
+                <Text style={{ marginTop: 14, fontSize: 15, fontWeight: '700', color: '#5d7399' }}>
+                  Aún no hay eventos registrados.
+                </Text>
+              </View>
             ) : (
               events.map((eventItem) => {
                 const isJoined = joinedEventIds.includes(eventItem.id);
@@ -213,19 +292,56 @@ export function HomeScreen() {
 
                 return (
                   <View
-                    className='rounded-xl border border-[#e1ebff] bg-[#f8fbff] px-3 py-3'
                     key={eventItem.id}
+                    style={{
+                      backgroundColor: '#fff',
+                      borderRadius: 20,
+                      padding: 18,
+                      shadowColor: '#163457',
+                      shadowOpacity: 0.07,
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowRadius: 10,
+                      elevation: 3,
+                    }}
                   >
-                    <Text className='text-base font-bold text-[#173761]'>{eventItem.name}</Text>
-                    <Text className='mt-1 text-sm text-[#486387]'>
-                      {eventItem.city} · {eventItem.disasterType}
-                    </Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#111f3c', flex: 1, marginRight: 10 }}>
+                        {eventItem.name}
+                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: '#eff6ff',
+                          borderRadius: 999,
+                          paddingHorizontal: 10,
+                          paddingVertical: 4,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#1e40af' }}>
+                          {eventItem.disasterType.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={{ marginTop: 6, fontSize: 13, color: '#61799d' }}>{eventItem.city}</Text>
+
                     <Pressable
-                      className={`mt-3 rounded-lg px-3 py-2 ${isJoined ? 'bg-[#e8f7ec]' : 'bg-[#1f5fe0]'}`}
+                      style={{
+                        marginTop: 14,
+                        borderRadius: 12,
+                        paddingVertical: 10,
+                        alignItems: 'center',
+                        backgroundColor: isJoined ? '#e8f7ec' : '#1e73fa',
+                      }}
                       disabled={isPending}
                       onPress={() => handleToggleSupport(eventItem.id)}
                     >
-                      <Text className={`text-center text-sm font-semibold ${isJoined ? 'text-[#166534]' : 'text-white'}`}>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: '700',
+                          color: isJoined ? '#166534' : '#fff',
+                        }}
+                      >
                         {buttonLabel}
                       </Text>
                     </Pressable>
@@ -235,7 +351,39 @@ export function HomeScreen() {
             )}
           </View>
         ) : null}
-      </View>
-    </AppScreen>
+      </ScrollView>
+    </SafeAreaView>
   );
+}
+
+function handleToggleSupportError(error: unknown, context: ToggleSupportContext) {
+  const { alreadyJoined, eventId, events, logout, setJoinedEventIds, setFeedback, setError } = context;
+  const status = getHttpStatusCode(error);
+
+  if (!alreadyJoined && (status === 409 || isAlreadySupportingError(error))) {
+    setJoinedEventIds((prev) => (prev.includes(eventId) ? prev : [...prev, eventId]));
+    const joinedEvent = events.find((eventItem) => eventItem.id === eventId);
+
+    if (joinedEvent) {
+      rememberJoinedEvent(joinedEvent);
+    }
+
+    setFeedback('Ya apoyas este evento.');
+    return;
+  }
+
+  if (alreadyJoined && status === 404) {
+    setJoinedEventIds((prev) => prev.filter((id) => id !== eventId));
+    forgetJoinedEvent(eventId);
+    setFeedback('Ya no estabas apoyando este evento.');
+    return;
+  }
+
+  if (status === 401) {
+    logout();
+    setError('Tu sesión expiró. Inicia sesión nuevamente.');
+    return;
+  }
+
+  setError(`No fue posible actualizar el apoyo. ${getErrorMessage(error)}`);
 }

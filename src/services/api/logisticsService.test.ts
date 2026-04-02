@@ -1,5 +1,6 @@
 import {
   assignShipmentVolunteer,
+  createShipment,
   createPickupPoint,
   getPickupPoints,
   getShipments,
@@ -22,7 +23,9 @@ describe('logisticsService', () => {
 
     await getPickupPoints();
 
-    expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/pickup-points?page=1&limit=100');
+    expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/pickup-points?page=1&limit=100', {
+      token: undefined,
+    });
   });
 
   it('creates pickup point', async () => {
@@ -33,6 +36,7 @@ describe('logisticsService', () => {
 
     expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/pickup-points', {
       method: 'POST',
+      token: undefined,
       body: payload,
     });
   });
@@ -42,7 +46,9 @@ describe('logisticsService', () => {
 
     await getShipments(2, 30);
 
-    expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/shipments?page=2&limit=30');
+    expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/shipments?page=2&limit=30', {
+      token: undefined,
+    });
   });
 
   it('gets shipments with default pagination', async () => {
@@ -50,7 +56,9 @@ describe('logisticsService', () => {
 
     await getShipments();
 
-    expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/shipments?page=1&limit=100');
+    expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/shipments?page=1&limit=100', {
+      token: undefined,
+    });
   });
 
   it('assigns volunteer to shipment', async () => {
@@ -60,7 +68,20 @@ describe('logisticsService', () => {
 
     expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/shipments/3/assign-volunteer', {
       method: 'PATCH',
+      token: undefined,
       body: { volunteerId: 44 },
+    });
+  });
+
+  it('creates shipment', async () => {
+    mockedHttpClient.mockResolvedValueOnce({ id: 5 } as never);
+
+    await createShipment({ campaignId: 7, pickupPointId: 11 });
+
+    expect(mockedHttpClient).toHaveBeenCalledWith('/logistics/shipments', {
+      method: 'POST',
+      token: undefined,
+      body: { campaignId: 7, pickupPointId: 11 },
     });
   });
 });

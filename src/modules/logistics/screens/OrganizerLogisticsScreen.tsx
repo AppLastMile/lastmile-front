@@ -21,6 +21,7 @@ import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 import {
   assignShipmentVolunteer,
+  createShipment,
   createPickupPoint,
   getPickupPoints,
   getShipments,
@@ -29,6 +30,7 @@ import {
 } from '@/services/api/logisticsService';
 import { rememberPickupPoint, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
 import { getUsers, type UserSummary } from '@/services/api/usersService';
+import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 
 function getErrorMessage(error: unknown) {
   if (!(error instanceof Error)) {
@@ -98,6 +100,49 @@ function getSector(id: number) {
   const letter = String.fromCodePoint(65 + (id % 5));
   const num = (id % 9) + 1;
   return `Sector ${letter}-${num}`;
+}
+
+function toNumberId(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getShipmentCampaignId(shipment: Shipment) {
+  const record = shipment as unknown as {
+    campaignId?: unknown;
+    campaign_id?: unknown;
+    campaign?: { id?: unknown };
+  };
+
+  return (
+    toNumberId(record.campaignId) ??
+    toNumberId(record.campaign_id) ??
+    toNumberId(record.campaign?.id)
+  );
+}
+
+function getShipmentEventId(shipment: Shipment) {
+  const record = shipment as unknown as {
+    eventId?: unknown;
+    event_id?: unknown;
+    event?: { id?: unknown };
+  };
+
+  return (
+    toNumberId(record.eventId) ??
+    toNumberId(record.event_id) ??
+    toNumberId(record.event?.id)
+  );
+}
+
+function getNormalizedShipmentStatus(shipment: Shipment) {
+  const status = String(shipment.status ?? '').trim().toLowerCase();
+
+  if (status === 'pending' || status === 'assigned' || status === 'in_transit' || status === 'delivered') {
+    return status;
+  }
+
+  return 'pending';
 }
 
 function PickupPointCard({ point, event, bgColor }: Readonly<{ point: PickupPoint; event: EventSummary | undefined; bgColor: string }>) {
@@ -221,6 +266,7 @@ function VolunteerCard({
 }
 
 export function OrganizerLogisticsScreen() {
+  const { currentUser, logout } = useAuthSession();
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -235,10 +281,15 @@ export function OrganizerLogisticsScreen() {
   const [assignmentFeedback, setAssignmentFeedback] = useState<string | null>(null);
 
   const [isCreatePickupOpen, setIsCreatePickupOpen] = useState(false);
+  const [isCreateShipmentOpen, setIsCreateShipmentOpen] = useState(false);
   const [pickupName, setPickupName] = useState('');
   const [pickupAddress, setPickupAddress] = useState('');
   const [selectedCity, setSelectedCity] = useState<ColombianCity | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [selectedCampaignIdForShipment, setSelectedCampaignIdForShipment] = useState<number | null>(null);
+  const [selectedPickupPointIdForShipment, setSelectedPickupPointIdForShipment] = useState<number | null>(null);
+  const [shipmentSubmitError, setShipmentSubmitError] = useState<string | null>(null);
+  const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
   const [pickupSubmitError, setPickupSubmitError] = useState<string | null>(null);
   const [isCreatingPickup, setIsCreatingPickup] = useState(false);
@@ -370,7 +421,18 @@ export function OrganizerLogisticsScreen() {
     Boolean(selectedEventId) &&
     !isCreatingPickup;
 
+  const canCreateShipment =
+    Boolean(selectedCampaignIdForShipment) &&
+    Boolean(selectedPickupPointIdForShipment) &&
+    !isCreatingShipment;
+
   const loadData = useCallback(async () => {
+    if (!currentUser?.accessToken) {
+      setIsLoading(false);
+      setLoadError('Tu sesión expiró. Inicia sesión nuevamente.');
+      return;
+    }
+
     setIsLoading(true);
     setLoadError(null);
 
@@ -378,9 +440,9 @@ export function OrganizerLogisticsScreen() {
       const [eventsResponse, campaignsResponse, pickupPointsResponse, usersResponse, shipmentsResponse] = await Promise.all([
         getEvents(),
         getCampaigns(),
-        getPickupPoints(),
+        getPickupPoints(1, 100, currentUser.accessToken),
         getUsers(),
-        getShipments(),
+        getShipments(1, 100, currentUser.accessToken),
       ]);
 
       setEvents(eventsResponse.data);
@@ -390,12 +452,17 @@ export function OrganizerLogisticsScreen() {
       setShipments(shipmentsResponse.data);
       setVolunteers(usersResponse.data.filter((user) => user.role === 'volunteer'));
       setSelectedEventId((current) => current ?? eventsResponse.data[0]?.id ?? null);
+      setSelectedCampaignIdForShipment((current) => current ?? campaignsResponse.data[0]?.id ?? null);
+      setSelectedPickupPointIdForShipment((current) => current ?? pickupPointsResponse.data[0]?.id ?? null);
     } catch (error) {
+      if (getErrorMessage(error).toLowerCase().includes('authentication token is required')) {
+        logout();
+      }
       setLoadError(`No fue posible cargar logistica. ${getErrorMessage(error)}`);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentUser, logout]);
 
   useEffect(() => {
     loadData();
@@ -411,6 +478,12 @@ export function OrganizerLogisticsScreen() {
       return;
     }
 
+    if (!currentUser?.accessToken) {
+      setPickupSubmitError('Tu sesión expiró. Inicia sesión nuevamente.');
+      logout();
+      return;
+    }
+
     setIsCreatingPickup(true);
     setPickupSubmitError(null);
 
@@ -420,7 +493,7 @@ export function OrganizerLogisticsScreen() {
         address: pickupAddress.trim(),
         city: selectedCity.name,
         eventId: selectedEventId,
-      });
+      }, currentUser.accessToken);
 
       setPickupPoints((prev) => [createdPickupPoint, ...prev]);
       rememberPickupPoint(createdPickupPoint);
@@ -432,6 +505,39 @@ export function OrganizerLogisticsScreen() {
       setPickupSubmitError(`No se pudo crear el punto. ${getErrorMessage(error)}`);
     } finally {
       setIsCreatingPickup(false);
+    }
+  };
+
+  const handleCreateShipment = async () => {
+    if (!selectedCampaignIdForShipment || !selectedPickupPointIdForShipment) {
+      return;
+    }
+
+    if (!currentUser?.accessToken) {
+      setShipmentSubmitError('Tu sesión expiró. Inicia sesión nuevamente.');
+      logout();
+      return;
+    }
+
+    setIsCreatingShipment(true);
+    setShipmentSubmitError(null);
+
+    try {
+      const createdShipment = await createShipment(
+        {
+          campaignId: selectedCampaignIdForShipment,
+          pickupPointId: selectedPickupPointIdForShipment,
+        },
+        currentUser.accessToken
+      );
+
+      setShipments((prev) => [createdShipment, ...prev]);
+      setIsCreateShipmentOpen(false);
+      setAssignmentFeedback('Envío creado correctamente. Ya puedes asignarlo a un voluntario.');
+    } catch (error) {
+      setShipmentSubmitError(`No se pudo crear el envío. ${getErrorMessage(error)}`);
+    } finally {
+      setIsCreatingShipment(false);
     }
   };
 
@@ -447,6 +553,12 @@ export function OrganizerLogisticsScreen() {
       return;
     }
 
+    if (!currentUser?.accessToken) {
+      setAssignmentFeedback('Tu sesión expiró. Inicia sesión nuevamente.');
+      logout();
+      return;
+    }
+
     const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignForAssignment);
 
     if (!selectedCampaign) {
@@ -454,14 +566,44 @@ export function OrganizerLogisticsScreen() {
       return;
     }
 
-    const shipmentToAssign = shipments.find(
-      (shipment) =>
-        shipment.eventId === selectedCampaign.eventId &&
-        (shipment.assignedVolunteerId === null || shipment.assignedVolunteerId === undefined)
-    );
+    const selectedCampaignId = toNumberId(selectedCampaign.id);
+    const selectedEventIdValue = toNumberId(selectedCampaign.eventId);
+
+    const shipmentToAssign = shipments.find((shipment) => {
+      const shipmentCampaignId = getShipmentCampaignId(shipment);
+      const shipmentEventId = getShipmentEventId(shipment);
+      const belongsToCampaign =
+        selectedCampaignId !== null && shipmentCampaignId !== null && shipmentCampaignId === selectedCampaignId;
+      const belongsToEventFallback =
+        selectedEventIdValue !== null && shipmentEventId !== null && shipmentEventId === selectedEventIdValue;
+      const isUnassigned = shipment.assignedVolunteerId === null || shipment.assignedVolunteerId === undefined;
+      const normalizedStatus = getNormalizedShipmentStatus(shipment);
+      const isAssignableStatus = normalizedStatus === 'pending' || normalizedStatus === 'assigned';
+
+      return (belongsToCampaign || belongsToEventFallback) && isUnassigned && isAssignableStatus;
+    });
 
     if (!shipmentToAssign) {
-      setAssignmentFeedback('No hay envios pendientes para esta campana.');
+      const relatedShipments = shipments.filter((shipment) => {
+        const shipmentCampaignId = getShipmentCampaignId(shipment);
+        const shipmentEventId = getShipmentEventId(shipment);
+        const belongsToCampaign =
+          selectedCampaignId !== null && shipmentCampaignId !== null && shipmentCampaignId === selectedCampaignId;
+        const belongsToEventFallback =
+          selectedEventIdValue !== null && shipmentEventId !== null && shipmentEventId === selectedEventIdValue;
+
+        return belongsToCampaign || belongsToEventFallback;
+      });
+
+      const assignableRelatedShipments = relatedShipments.filter((shipment) => {
+        const isUnassigned = shipment.assignedVolunteerId === null || shipment.assignedVolunteerId === undefined;
+        const normalizedStatus = getNormalizedShipmentStatus(shipment);
+        return isUnassigned && (normalizedStatus === 'pending' || normalizedStatus === 'assigned');
+      });
+
+      setAssignmentFeedback(
+        `No hay envíos pendientes para esta campaña. Relacionados: ${relatedShipments.length}, asignables: ${assignableRelatedShipments.length}.`
+      );
       return;
     }
 
@@ -469,7 +611,11 @@ export function OrganizerLogisticsScreen() {
     setAssignmentFeedback(null);
 
     try {
-      const updatedShipment = await assignShipmentVolunteer(shipmentToAssign.id, selectedVolunteerForAssignment.id);
+      const updatedShipment = await assignShipmentVolunteer(
+        shipmentToAssign.id,
+        selectedVolunteerForAssignment.id,
+        currentUser.accessToken
+      );
 
       setShipments((prev) =>
         prev.map((shipment) => (shipment.id === updatedShipment.id ? updatedShipment : shipment))
@@ -521,6 +667,111 @@ export function OrganizerLogisticsScreen() {
           <FontAwesome5 color='#fff' name='map-marker-alt' size={18} style={{ marginRight: 10 }} />
           <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>Nuevo punto de recogida</Text>
         </Pressable>
+
+        <Pressable
+          onPress={() => setIsCreateShipmentOpen((current) => !current)}
+          style={{
+            marginHorizontal: 20,
+            marginBottom: 18,
+            backgroundColor: '#0d8383',
+            borderRadius: 18,
+            paddingVertical: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <FontAwesome5 color='#fff' name='box-open' size={17} style={{ marginRight: 10 }} />
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Nuevo envío</Text>
+        </Pressable>
+
+        {isCreateShipmentOpen ? (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ marginHorizontal: 20, marginBottom: 20, backgroundColor: '#fff', borderRadius: 24, padding: 20, shadowColor: '#163457', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 6 }, shadowRadius: 14, elevation: 4 }}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#19335f', marginBottom: 8 }}>Crear envío</Text>
+            <Text style={{ fontSize: 12, color: '#60779a', marginBottom: 12 }}>
+              Selecciona campaña y punto de recogida para crear un envío asignable.
+            </Text>
+
+            <Text style={{ marginBottom: 6, fontSize: 13, fontWeight: '700', color: '#27436d' }}>Campaña</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {campaigns.map((campaignItem) => {
+                  const isSelected = selectedCampaignIdForShipment === campaignItem.id;
+                  return (
+                    <Pressable
+                      key={campaignItem.id}
+                      onPress={() => setSelectedCampaignIdForShipment(campaignItem.id)}
+                      style={{
+                        borderWidth: 1,
+                        borderRadius: 999,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderColor: isSelected ? '#1f5fe0' : '#d6e3fb',
+                        backgroundColor: isSelected ? '#e8f0ff' : '#fff',
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? '#1f4fb6' : '#4a6083' }}>
+                        {campaignItem.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <Text style={{ marginBottom: 6, fontSize: 13, fontWeight: '700', color: '#27436d' }}>Punto de recogida</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {pickupPoints.map((point) => {
+                  const isSelected = selectedPickupPointIdForShipment === point.id;
+                  return (
+                    <Pressable
+                      key={point.id}
+                      onPress={() => setSelectedPickupPointIdForShipment(point.id)}
+                      style={{
+                        borderWidth: 1,
+                        borderRadius: 999,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderColor: isSelected ? '#0d8383' : '#d6e3fb',
+                        backgroundColor: isSelected ? '#e6fffb' : '#fff',
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? '#0b6f6f' : '#4a6083' }}>
+                        {point.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            {shipmentSubmitError ? (
+              <Text style={{ marginBottom: 10, backgroundColor: '#ffecef', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: '#9f2238' }}>
+                {shipmentSubmitError}
+              </Text>
+            ) : null}
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Pressable
+                style={{ borderWidth: 1, borderColor: '#d3def3', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12 }}
+                onPress={() => setIsCreateShipmentOpen(false)}
+              >
+                <Text style={{ fontWeight: '700', color: '#3a5176' }}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={{ borderRadius: 14, paddingHorizontal: 22, paddingVertical: 12, backgroundColor: canCreateShipment ? '#0d8383' : '#9dcfcf' }}
+                disabled={!canCreateShipment}
+                onPress={handleCreateShipment}
+              >
+                <Text style={{ fontWeight: '700', color: '#fff' }}>{isCreatingShipment ? 'Creando...' : 'Crear envío'}</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        ) : null}
 
         {/* ── Create pickup form ── */}
         {isCreatePickupOpen ? (
@@ -695,7 +946,7 @@ export function OrganizerLogisticsScreen() {
               </Text>
 
               {campaigns.length === 0 ? (
-                <Text style={{ fontSize: 13, color: '#9ca3af', marginBottom: 10 }}>No hay campanas disponibles.</Text>
+                <Text style={{ fontSize: 13, color: '#9ca3af', marginBottom: 10 }}>No hay campañas disponibles.</Text>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
