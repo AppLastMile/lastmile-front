@@ -1,7 +1,7 @@
-import { FontAwesome5, MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Location from 'expo-location';
+import { MaterialIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Location from "expo-location";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,10 +13,14 @@ import {
   TextInput,
   useWindowDimensions,
   View,
-} from 'react-native';
-import MapView, { Marker, type Region } from 'react-native-maps';
-import Animated, { FadeInDown, FadeInUp, FadeOutUp, Layout } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+} from "react-native";
+import MapView, { Marker, UrlTile, type Region } from "react-native-maps";
+import Animated, {
+  FadeInDown,
+  FadeInUp,
+  Layout,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   COLOMBIAN_CITIES,
@@ -52,7 +56,6 @@ export function CreateMissionScreen() {
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const tabsBottomOffset = Math.max(insets.bottom - 6, 6);
-  const floatingControlsTop = Math.max(insets.top + 24, 48);
   const maxFormHeight = Math.max(
     FORM_MIN_HEIGHT,
     windowHeight - (tabsBottomOffset + ORGANIZER_TABS_HEIGHT + FORM_GAP_ABOVE_TABS + FORM_VERTICAL_MARGIN)
@@ -75,7 +78,10 @@ export function CreateMissionScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [myLocation, setMyLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [showOrganizerWelcome, setShowOrganizerWelcome] = useState(true);
   const controlsTop = showOrganizerWelcome ? floatingControlsTop + 62 : floatingControlsTop;
 
@@ -227,19 +233,6 @@ export function CreateMissionScreen() {
     }, [loadMapData])
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      setShowOrganizerWelcome(true);
-      const timeoutId = setTimeout(() => {
-        setShowOrganizerWelcome(false);
-      }, 3200);
-
-      return () => {
-        clearTimeout(timeoutId);
-      };
-    }, [])
-  );
-
   useEffect(() => {
     let isMounted = true;
 
@@ -364,6 +357,11 @@ export function CreateMissionScreen() {
   return (
     <SafeAreaView className='flex-1 bg-[#dce9f5]'>
       <MapView initialRegion={COLOMBIA_REGION} ref={mapRef} style={{ flex: 1 }}>
+        <UrlTile
+          maximumZ={19}
+          urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          zIndex={-1}
+        />
 
         {mappedEvents.map(({ event, city }) => (
           <Marker
@@ -455,14 +453,7 @@ export function CreateMissionScreen() {
           className='flex-row items-center gap-2 rounded-2xl bg-[#1f5fe0] px-4 py-2.5'
           disabled={!myLocation}
           onPress={centerOnMyLocation}
-          style={{
-            opacity: myLocation ? 1 : 0.65,
-            shadowColor: '#0b327f',
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.24,
-            shadowRadius: 10,
-            elevation: 8,
-          }}
+          style={{ opacity: myLocation ? 1 : 0.65 }}
         >
           <View className='h-6 w-6 items-center justify-center rounded-full bg-[#e7efff]'>
             <FontAwesome5 color='#1f5fe0' name='crosshairs' size={11} />

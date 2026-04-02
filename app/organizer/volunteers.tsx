@@ -1,3 +1,3 @@
-import { VolunteersScreen } from '@/modules/volunteers/screens/VolunteersScreen';
+import { VolunteersScreen } from "@/modules/volunteers/screens/VolunteersScreen";
 
 export default VolunteersScreen;

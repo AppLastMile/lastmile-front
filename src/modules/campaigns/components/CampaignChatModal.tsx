@@ -40,6 +40,9 @@ export function CampaignChatModal({
           <Pressable className='h-10 w-10 items-center justify-center rounded-full bg-white' onPress={onClose}>
             <Text className='text-base font-bold text-[#1f4fb6]'>X</Text>
           </Pressable>
+          <Text className='ml-3 flex-1 text-base font-extrabold text-[#19335b]'>
+            Chat {campaignName ? `- ${campaignName}` : ''}
+          </Text>
         </View>
 
         <ScrollView className='flex-1 px-4' contentContainerStyle={{ gap: 8, paddingBottom: 16 }}>

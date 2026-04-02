@@ -8,57 +8,24 @@ export type AuctionBidMode = 'free' | 'fixed_increment';
 
 export type Auction = {
   id: number;
-  productId: number;
-  campaignId: number | null;
+  campaignId: number;
   sellerId: number;
   itemName: string;
-  description: string | null;
-  initialPrice: number;
-  currentPrice: number | null;
-  currency: string;
-  durationMinutes: number;
+  description?: string;
+  price: number;
+  currency?: string;
   status: AuctionStatus;
-  bidMode: AuctionBidMode;
-  bidIncrement: number | null;
   buyerId: number | null;
-  winnerId: number | null;
-  startedAt: string | null;
-  endAt: string | null;
+  createdAt: string;
   soldAt: string | null;
-  createdAt: string;
-  version: number;
-};
-
-export type AuctionBid = {
-  id: number;
-  auctionId: number;
-  userId: number;
-  amount: number;
-  createdAt: string;
-};
-
-export type Bid = {
-  id: number;
-  auctionId: number;
-  userId: number;
-  amount: number;
-  createdAt: string;
-  currentAuctionPrice: number;
 };
 
 export type CreateAuctionPayload = {
-  productId: number;
-  initialPrice: number;
-  durationMinutes: number;
+  sellerId: number;
+  itemName: string;
+  description?: string;
+  price: number;
   currency?: string;
-  campaignId?: number;
-  bidMode?: AuctionBidMode;
-  bidIncrement?: number;
-};
-
-export type PlaceBidPayload = {
-  userId: number;
-  amount?: number;
 };
 
 export type BuyAuctionPayload = {
@@ -66,66 +33,20 @@ export type BuyAuctionPayload = {
   idempotencyKey?: string;
 };
 
-export type CreateCampaignAuctionPayload = {
-  sellerId: number;
-  itemName: string;
-  description?: string;
-  price: number;
-  currency: string;
-};
-
-export async function getAuctions(status?: AuctionStatus) {
-  const query = status ? `?status=${status}` : '';
-  return httpClient<PaginatedResponse<Auction>>(`/auctions${query}`);
+export async function getCampaignAuctions(campaignId: number, status: 'active' | 'sold' | 'all' = 'all') {
+  return httpClient<PaginatedResponse<Auction>>(`/campaigns/${campaignId}/auctions?status=${status}&page=1&limit=100`);
 }
 
-export async function getAuction(id: number) {
-  return httpClient<Auction>(`/auctions/${id}`);
-}
-
-export async function getCampaignAuctions(campaignId: number, status?: 'active' | 'sold' | 'all') {
-  const statusParam = status ?? 'all';
-  return httpClient<PaginatedResponse<Auction>>(`/campaigns/${campaignId}/auctions?status=${statusParam}&page=1&limit=100`);
-}
-
-export async function createCampaignAuction(campaignId: number, payload: CreateCampaignAuctionPayload) {
+export async function createAuction(campaignId: number, payload: CreateAuctionPayload) {
   return httpClient<Auction>(`/campaigns/${campaignId}/auctions`, {
     method: 'POST',
     body: payload,
   });
 }
 
-export async function createAuction(payload: CreateAuctionPayload, token?: string) {
-  return httpClient<Auction>('/auctions', {
-    method: 'POST',
-    body: payload,
-    token,
-  });
-}
-
-export async function startAuction(id: number, token?: string) {
-  return httpClient<Auction>(`/auctions/${id}/start`, {
-    method: 'POST',
-    token,
-  });
-}
-
-export async function getAuctionBids(id: number) {
-  return httpClient<AuctionBid[]>(`/auctions/${id}/bids`);
-}
-
-export async function placeBid(auctionId: number, payload: PlaceBidPayload, token?: string) {
-  return httpClient<Bid>(`/auctions/${auctionId}/bids`, {
-    method: 'POST',
-    body: payload,
-    token,
-  });
-}
-
-export async function buyAuction(auctionId: number, payload: BuyAuctionPayload, token?: string) {
+export async function buyAuction(auctionId: number, payload: BuyAuctionPayload) {
   return httpClient<Auction>(`/auctions/${auctionId}/buy`, {
     method: 'POST',
     body: payload,
-    token,
   });
 }

@@ -124,16 +124,6 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name='auctions'
-        options={{
-          href: isDonor ? null : undefined,
-          title: 'Subastas',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon color={color} focused={focused} name='hammer' />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name='profile'
         options={{
           href: isDonor ? null : undefined,

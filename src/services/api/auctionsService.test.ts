@@ -1,5 +1,9 @@
-import { buyAuction, createCampaignAuction, getCampaignAuctions } from './auctionsService';
-import { httpClient } from './httpClient';
+import {
+  buyAuction,
+  createAuction,
+  getCampaignAuctions,
+} from "./auctionsService";
+import { httpClient } from "./httpClient";
 
 jest.mock('./httpClient', () => ({
   httpClient: jest.fn(),
@@ -32,7 +36,7 @@ describe('auctionsService', () => {
     const payload = { sellerId: 1, itemName: 'Nevera', description: 'Usada', price: 50000, currency: 'COP' };
     mockedHttpClient.mockResolvedValueOnce({ id: 1 } as never);
 
-    await createCampaignAuction(10, payload);
+    await createAuction(10, payload);
 
     expect(mockedHttpClient).toHaveBeenCalledWith('/campaigns/10/auctions', {
       method: 'POST',

@@ -6,8 +6,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthSessionProvider } from '@/modules/auth/context/AuthSessionContext';
 import tamaguiConfig from '../../tamagui.config';
+import { GlobalLogoutButton } from "@/components/common/GlobalLogoutButton";
 
-export function AppProvider({ children }: Readonly<PropsWithChildren>) {
+export function AppProvider({ children }: PropsWithChildren) {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -15,6 +16,7 @@ export function AppProvider({ children }: Readonly<PropsWithChildren>) {
           <AuthSessionProvider>
             <StatusBar style='dark' />
             {children}
+            <GlobalLogoutButton />
           </AuthSessionProvider>
         </TamaguiProvider>
       </SafeAreaProvider>

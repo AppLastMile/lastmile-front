@@ -1,3 +1,3 @@
-import { OrganizerLogisticsScreen } from '@/modules/logistics/screens/OrganizerLogisticsScreen';
+import { OrganizerLogisticsScreen } from "@/modules/logistics/screens/OrganizerLogisticsScreen";
 
 export default OrganizerLogisticsScreen;

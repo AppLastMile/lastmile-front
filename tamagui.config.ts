@@ -1,4 +1,4 @@
-import { createTamagui, createTokens } from '@tamagui/core';
+import { createTamagui, createTokens } from "@tamagui/core";
 
 const tokens = createTokens({
   size: {
@@ -36,11 +36,11 @@ const tokens = createTokens({
     4: 40,
   },
   color: {
-    background: '#f4f7f2',
-    text: '#13201a',
-    primary: '#22a45d',
-    primarySoft: '#d9f7e6',
-    border: '#b9c7be',
+    background: "#f4f7f2",
+    text: "#13201a",
+    primary: "#22a45d",
+    primarySoft: "#d9f7e6",
+    border: "#b9c7be",
   },
 });
 
@@ -54,13 +54,13 @@ const config = createTamagui({
       primary: tokens.color.primary,
     },
   },
-  defaultTheme: 'light',
+  defaultTheme: "light",
 });
 
 export default config;
 
 export type AppTamaguiConfig = typeof config;
 
-declare module '@tamagui/core' {
+declare module "@tamagui/core" {
   interface TamaguiCustomConfig extends AppTamaguiConfig {}
 }

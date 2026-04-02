@@ -1,4 +1,4 @@
-import { httpClient } from './httpClient';
+import { httpClient } from "./httpClient";
 
 export type CreateMoneyDonationPayload = {
   campaignId: number;
@@ -15,10 +15,10 @@ export type MoneyDonationResponse = {
 };
 
 export type DonationItemStatus =
-  | 'pending'
-  | 'delivered_to_pickup_point'
-  | 'assigned_to_shipment'
-  | 'delivered';
+  | "pending"
+  | "delivered_to_pickup_point"
+  | "assigned_to_shipment"
+  | "delivered";
 
 export type CreateItemDonationPayload = {
   campaignId: number;
@@ -40,19 +40,21 @@ export type ItemDonationResponse = {
 };
 
 export async function createMoneyDonation(payload: CreateMoneyDonationPayload) {
-  return httpClient<MoneyDonationResponse>('/donations/money', {
-    method: 'POST',
+  return httpClient<MoneyDonationResponse>("/donations/money", {
+    method: "POST",
     body: payload,
   });
 }
 
 export async function createItemDonation(payload: CreateItemDonationPayload) {
-  return httpClient<ItemDonationResponse>('/donations/items', {
-    method: 'POST',
+  return httpClient<ItemDonationResponse>("/donations/items", {
+    method: "POST",
     body: payload,
   });
 }
 
 export async function getItemDonations(page = 1, limit = 200) {
-  return httpClient<ItemDonationResponse[]>(`/donations/items?page=${page}&limit=${limit}`);
+  return httpClient<ItemDonationResponse[]>(
+    `/donations/items?page=${page}&limit=${limit}`,
+  );
 }

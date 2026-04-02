@@ -13,7 +13,6 @@ type RealtimeHandler<T = unknown> = (payload: T) => void;
 let socket: Socket | null = null;
 let connectErrors = 0;
 const joinedRooms = new Set<string>();
-let activeAuthToken: string | undefined;
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const DEFAULT_WS_NAMESPACE = '/ws';
@@ -221,33 +220,11 @@ function syncJoinedRooms() {
 }
 
 export function connectRealtime(auth: RealtimeAuth = {}) {
-  const hasToken = Boolean(auth.token && auth.token.trim().length > 0);
-
-  if (socket?.connected) {
-    // If a token is now available and does not match the active one, reconnect with updated auth.
-    if (hasToken && activeAuthToken !== auth.token) {
-      logRealtimeDebug('auth token changed on connected socket, reconnecting');
-      socket.disconnect();
-      socket = null;
-    } else {
-      return socket;
-    }
-  }
-
   if (socket?.connected) {
     return socket;
   }
 
   if (socket && !socket.connected) {
-    if (hasToken) {
-      (socket as Socket & { auth?: Record<string, unknown> }).auth = {
-        token: auth.token,
-        userId: auth.userId,
-        role: auth.role,
-      };
-      activeAuthToken = auth.token;
-    }
-
     // Avoid forcing repeated connect() calls while Socket.IO is already attempting to reconnect.
     if ((socket as Socket & { active?: boolean }).active) {
       return socket;
@@ -257,7 +234,7 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
     return socket;
   }
 
-  const anonymousMode = shouldAllowAnonymousWs() && !hasToken;
+  const anonymousMode = shouldAllowAnonymousWs();
   const transports = resolveWsTransports();
   const baseUrl = resolveWsBaseUrl();
   const namespace = resolveWsNamespace();
@@ -293,7 +270,7 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
 
   activeAuthToken = hasToken ? auth.token : undefined;
 
-  socket.on('connect', () => {
+  socket.on("connect", () => {
     connectErrors = 0;
     syncJoinedRooms();
     logRealtimeDebug('connected', {
@@ -332,7 +309,6 @@ export function disconnectRealtime() {
 
   socket.disconnect();
   socket = null;
-  activeAuthToken = undefined;
   connectErrors = 0;
   joinedRooms.clear();
 }

@@ -13,6 +13,11 @@ import {
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import { View, StyleSheet } from "react-native";
+import MapView, { Marker } from "react-native-maps";
+import { useLocalSearchParams } from "expo-router";
+import { useEffect, useState, useCallback, useRef } from "react";
+import * as Location from "expo-location";
 
 const COLOMBIA_REGION: Region = {
   latitude: 4.5709,
@@ -40,6 +45,9 @@ export function MapScreen() {
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const { pickupPointId, shipmentId } = useLocalSearchParams();
+
+  const mapRef = useRef<MapView | null>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -94,6 +102,9 @@ export function MapScreen() {
     }, [isDonor])
   );
 
+  // =========================
+  // 📦 CARGAR PICKUP POINT
+  // =========================
   useEffect(() => {
     let isMounted = true;
     let watch: Location.LocationSubscription | null = null;
@@ -200,6 +211,10 @@ export function MapScreen() {
           ref={setMapRef}
           style={{ flex: 1 }}
         >
+        {/* 🔵 TU UBICACIÓN */}
+        {currentLocation && (
+          <Marker coordinate={currentLocation} title="Tú" pinColor="blue" />
+        )}
 
           {mappedEvents.map(({ event, city }) => (
             <Marker
@@ -291,5 +306,16 @@ export function MapScreen() {
 
       {isDonor ? <DonorBottomTabs activeTab='inicio' /> : null}
     </SafeAreaView>
+        {/* 🔴 VOLUNTARIOS EN TIEMPO REAL */}
+        {Object.entries(volunteers).map(([userId, location]) => (
+          <Marker
+            key={userId}
+            coordinate={location}
+            title={`Voluntario ${userId}`}
+            pinColor="red"
+          />
+        ))}
+      </MapView>
+    </View>
   );
 }

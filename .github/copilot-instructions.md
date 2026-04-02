@@ -100,7 +100,6 @@ Capabilities:
 
 The project follows a **feature-based modular architecture**.
 
-
 src/
 
 app/ # Expo Router routes
@@ -132,13 +131,11 @@ constants/
 
 types/
 
-
 ---
 
 # Routing Structure (Expo Router)
 
 The application uses **Expo Router file-based routing**.
-
 
 app/
 
@@ -162,7 +159,6 @@ organizer/
 create-mission.tsx
 mission-detail.tsx
 volunteers.tsx
-
 
 ---
 
@@ -304,9 +300,7 @@ Example components:
 
 Prefer **reusable UI components** inside:
 
-
 components/ui/
-
 
 ---
 
@@ -519,7 +513,7 @@ Offline mission access
 
 
 
-## Backend 
+## Backend
 
 Estado General
 
@@ -671,3 +665,4 @@ Muchos listados ya vienen como paginados:
 data + meta (total, page, limit, totalPages).
 Errores usan excepciones Nest (404, 409, etc.) en formato estándar JSON de Nest.
 IDs esperados como numéricos (ParseIntPipe).
+```

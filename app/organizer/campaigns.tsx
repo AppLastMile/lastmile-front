@@ -1,3 +1,3 @@
-import { OrganizerCampaignsScreen } from '@/modules/campaigns/screens/OrganizerCampaignsScreen';
+import { OrganizerCampaignsScreen } from "@/modules/campaigns/screens/OrganizerCampaignsScreen";
 
 export default OrganizerCampaignsScreen;

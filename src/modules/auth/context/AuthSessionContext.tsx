@@ -1,8 +1,8 @@
-import type { PropsWithChildren } from 'react';
-import { createContext, useContext, useMemo, useState } from 'react';
+import type { PropsWithChildren } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 
-import type { UserRole } from '@/constants/roles';
-import { authService } from '@/services/auth/authService';
+import type { UserRole } from "@/constants/roles";
+import { authService } from "@/services/auth/authService";
 
 export type AuthSessionUser = {
   id: number;
@@ -13,15 +13,15 @@ export type AuthSessionUser = {
 };
 
 function getRedirectByRole(role: UserRole) {
-  if (role === 'organizer') {
-    return '/organizer/create-mission';
+  if (role === "organizer") {
+    return "/organizer/create-mission";
   }
 
-  if (role === 'donor') {
-    return '/(tabs)/map';
+  if (role === "donor") {
+    return "/(tabs)/map";
   }
 
-  return '/(tabs)/home';
+  return "/(tabs)/home";
 }
 
 type AuthSessionContextValue = {
@@ -60,7 +60,7 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
         setCurrentUser(null);
       },
     }),
-    [currentUser]
+    [currentUser],
   );
 
   return (
@@ -74,7 +74,7 @@ export function useAuthSession() {
   const context = useContext(AuthSessionContext);
 
   if (!context) {
-    throw new Error('useAuthSession must be used inside AuthSessionProvider');
+    throw new Error("useAuthSession must be used inside AuthSessionProvider");
   }
 
   return context;

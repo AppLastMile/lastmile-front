@@ -1,19 +1,12 @@
-import { Redirect } from 'expo-router';
-
-import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorCampaignsScreen } from '@/modules/campaigns/screens/DonorCampaignsScreen';
-import { MissionsScreen } from '@/modules/missions/screens/MissionsScreen';
+import { MissionsScreen } from "@/modules/missions/screens/MissionsScreen";
+import { DonorCampaignsScreen } from "@/modules/campaigns/screens/DonorCampaignsScreen";
 
 export default function MissionsRoute() {
-	const { currentUser } = useAuthSession();
+  const fakeUser = { role: "volunteer" };
 
-	if (!currentUser) {
-		return <Redirect href='/(auth)/login' />;
-	}
+  if (fakeUser.role === "donor") {
+    return <DonorCampaignsScreen />;
+  }
 
-	if (currentUser.role === 'donor') {
-		return <DonorCampaignsScreen />;
-	}
-
-	return <MissionsScreen />;
+  return <MissionsScreen />;
 }

@@ -1,3 +1,3 @@
-import { CreateMissionScreen } from '@/modules/missions/screens/CreateMissionScreen';
+import { CreateMissionScreen } from "@/modules/missions/screens/CreateMissionScreen";
 
 export default CreateMissionScreen;
