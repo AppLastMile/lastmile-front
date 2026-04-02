@@ -180,12 +180,6 @@ export function MapScreen() {
             <Text className='text-sm font-semibold text-[#2a456e]'>
               Marcadores: {mappedEvents.length}
             </Text>
-            <Pressable
-              className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90'
-              onPress={loadEvents}
-            >
-              <Text className='font-semibold text-white'>Recargar</Text>
-            </Pressable>
           </View>
         </View>
       ) : null}

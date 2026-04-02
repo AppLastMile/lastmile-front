@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
+import { ActivityIndicator, SafeAreaView, Text, View } from 'react-native';
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -128,9 +128,6 @@ export function MapScreen() {
         {!isDonor ? (
           <View className='mt-3 flex-row items-center justify-between'>
             <Text className='text-sm font-semibold text-[#2a456e]'>Marcadores: {mappedEvents.length}</Text>
-            <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadEvents}>
-              <Text className='font-semibold text-white'>Recargar</Text>
-            </Pressable>
           </View>
         ) : null}
       </View>

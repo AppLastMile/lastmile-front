@@ -178,8 +178,29 @@ export function CreateMissionScreen() {
     }, [loadData])
   );
 
+  useEffect(() => {
+    if (!createdEventLabel) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setCreatedEventLabel('');
+    }, 4000);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [createdEventLabel]);
+
   const handleCreateEvent = async () => {
     if (!selectedCity) {
+      return;
+    }
+
+    const trimmedDescription = eventDescription.trim();
+
+    if (trimmedDescription.length > 0 && trimmedDescription.length < 10) {
+      setSubmitError('La descripción del evento debe tener al menos 10 caracteres.');
       return;
     }
 
@@ -191,7 +212,7 @@ export function CreateMissionScreen() {
         name: eventName.trim(),
         disasterType: disasterType.trim(),
         city: selectedCity.name,
-        description: eventDescription.trim() || 'Evento registrado desde la vista web',
+        description: trimmedDescription || 'Evento registrado desde la vista web',
         date: new Date().toISOString(),
         createdBy: DEFAULT_CREATED_BY,
       });
