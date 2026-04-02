@@ -4,113 +4,173 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { AppScreen } from "@/components/ui/AppScreen";
 import { type EventSummary, getEvents } from "@/services/api/eventsService";
 
+import {
+  getVolunteerShipments,
+  type Shipment,
+} from "@/services/api/logisticsService";
+
+import { useRealtimeMissions } from "../hooks/useRealtimeMissions";
 import { useNotifications } from "@/modules/notifications/hooks/useNotifications";
 import { useAuthSession } from "@/modules/auth/context/AuthSessionContext";
 
 export function HomeScreen() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [events, setEvents] = useState<EventSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
   const { currentUser } = useAuthSession();
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const volunteerId = currentUser?.id || 10;
+
+  // 🔔 NOTIFICACIONES
   useNotifications(currentUser?.id?.toString());
 
-  const loadEvents = useCallback(async () => {
+  // =========================
+  // 🔥 LOAD INICIAL
+  // =========================
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await getEvents({ page: 1, limit: 10 });
-      setEvents(response.data);
-    } catch {
-      setError(
-        "No fue posible cargar eventos. Revisa la conexión con backend.",
-      );
+      const [eventsRes, shipmentsRes] = await Promise.all([
+        getEvents({ page: 1, limit: 10 }),
+        getVolunteerShipments(volunteerId),
+      ]);
+
+      setEvents(eventsRes.data);
+      setShipments(shipmentsRes.data);
+    } catch (e) {
+      console.log(e);
+      setError("Error conectando con backend");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [volunteerId]);
 
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    loadData();
+  }, [loadData]);
 
+  // =========================
+  // 🔥 REALTIME (CLAVE)
+  // =========================
+  useRealtimeMissions((updatedShipment) => {
+    setShipments((prev) => {
+      const exists = prev.find((s) => s.id === updatedShipment.id);
+
+      if (!exists) return [updatedShipment, ...prev];
+
+      return prev.map((s) =>
+        s.id === updatedShipment.id ? updatedShipment : s,
+      );
+    });
+  });
+
+  // =========================
+  // 📊 DERIVADOS
+  // =========================
+  const available = shipments.filter((s) => s.status === "pending");
+  const active = shipments.filter(
+    (s) => s.status === "assigned" || s.status === "in_transit",
+  );
+
+  // =========================
+  // 🎨 RENDER
+  // =========================
   return (
     <AppScreen>
       <View className="flex-1 gap-6">
-        {/* 🔵 HEADER */}
+        {/* HEADER */}
         <View>
           <Text className="text-3xl font-extrabold text-[#15325c]">
             👋 Inicio
           </Text>
-
           <Text className="mt-1 text-sm text-[#526887]">
-            Eventos activos registrados en el sistema
+            Panel en tiempo real
           </Text>
         </View>
 
-        {/* 🔄 BOTÓN ACTUALIZAR */}
+        {/* BOTÓN REFRESH */}
         <Pressable
-          className="self-start rounded-full bg-[#1f5fe0] px-5 py-2 active:opacity-90"
-          onPress={loadEvents}
+          className="self-start rounded-full bg-[#1f5fe0] px-5 py-2"
+          onPress={loadData}
         >
-          <Text className="font-semibold text-white">Actualizar</Text>
+          <Text className="text-white font-semibold">Actualizar</Text>
         </Pressable>
 
-        {/* 🔄 LOADING */}
-        {isLoading && (
-          <View className="flex-row items-center gap-2">
-            <ActivityIndicator color="#1f5fe0" size="small" />
-            <Text className="text-sm text-[#4d648a]">Cargando eventos...</Text>
-          </View>
-        )}
+        {/* LOADING */}
+        {isLoading && <ActivityIndicator />}
 
-        {/* ❌ ERROR */}
-        {error && (
-          <Text className="rounded-xl bg-[#ffecef] px-3 py-3 text-sm text-[#a1263d]">
-            {error}
-          </Text>
-        )}
+        {/* ERROR */}
+        {error && <Text className="text-red-500">{error}</Text>}
 
-        {/* 📦 LISTA DE EVENTOS */}
         {!isLoading && !error && (
-          <View className="gap-3">
-            {events.length === 0 ? (
-              <View className="rounded-2xl bg-[#f4f7fb] p-4">
-                <Text className="text-sm text-[#5b7190]">
-                  Aún no hay eventos registrados.
+          <>
+            {/* 🔥 MIS MISIONES */}
+            <View>
+              <Text className="text-xl font-bold text-[#15325c] mb-2">
+                🚚 Mis misiones
+              </Text>
+
+              {active.length === 0 ? (
+                <Text className="text-gray-500">
+                  No tienes misiones activas
                 </Text>
-              </View>
-            ) : (
-              events.map((eventItem) => (
+              ) : (
+                active.map((s) => (
+                  <View
+                    key={s.id}
+                    className="bg-white p-4 rounded-xl mb-2"
+                  >
+                    <Text>📦 Envío #{s.id}</Text>
+                    <Text>Estado: {s.status}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            {/* 🟢 DISPONIBLES */}
+            <View>
+              <Text className="text-xl font-bold text-[#15325c] mb-2">
+                🟢 Disponibles
+              </Text>
+
+              {available.length === 0 ? (
+                <Text className="text-gray-500">
+                  No hay misiones disponibles
+                </Text>
+              ) : (
+                available.slice(0, 3).map((s) => (
+                  <View
+                    key={s.id}
+                    className="bg-white p-4 rounded-xl mb-2"
+                  >
+                    <Text>📦 Envío #{s.id}</Text>
+                  </View>
+                ))
+              )}
+            </View>
+
+            {/* 🌍 EVENTOS */}
+            <View>
+              <Text className="text-xl font-bold text-[#15325c] mb-2">
+                🌍 Eventos activos
+              </Text>
+
+              {events.map((event) => (
                 <View
-                  key={eventItem.id}
-                  className="rounded-2xl bg-white p-4 shadow-sm"
-                  style={{
-                    shadowColor: "#000",
-                    shadowOpacity: 0.05,
-                    shadowRadius: 6,
-                    elevation: 2,
-                  }}
+                  key={event.id}
+                  className="bg-white p-4 rounded-xl mb-2"
                 >
-                  {/* Nombre */}
-                  <Text className="text-lg font-bold text-[#173761]">
-                    {eventItem.name}
-                  </Text>
-
-                  {/* Info */}
-                  <Text className="mt-1 text-sm text-[#486387]">
-                    📍 {eventItem.city}
-                  </Text>
-
-                  <Text className="mt-1 text-sm text-[#486387]">
-                    🌪️ {eventItem.disasterType}
-                  </Text>
+                  <Text className="font-bold">{event.name}</Text>
+                  <Text>📍 {event.city}</Text>
+                  <Text>🌪️ {event.disasterType}</Text>
                 </View>
-              ))
-            )}
-          </View>
+              ))}
+            </View>
+          </>
         )}
       </View>
     </AppScreen>

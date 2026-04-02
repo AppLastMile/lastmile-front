@@ -4,7 +4,6 @@ import { useLocalSearchParams } from "expo-router";
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as Location from "expo-location";
 
-import { useTracking } from "@/modules/map/hooks/useTracking";
 import { useSocketTracking } from "@/modules/map/hooks/useSocketTracking";
 import { getPickupPoints } from "@/services/api/logisticsService";
 
@@ -13,7 +12,6 @@ export function MapScreen() {
 
   const mapRef = useRef<MapView | null>(null);
 
-  // 🔥 convertir params a number
   const shipmentIdNum = shipmentId ? Number(shipmentId) : undefined;
   const pickupPointIdNum = pickupPointId ? Number(pickupPointId) : undefined;
 
@@ -32,12 +30,10 @@ export function MapScreen() {
   }>({});
 
   // =========================
-  // 🔥 TRACKING REAL
+  // 🔥 SOCKET TRACKING
   // =========================
-  useTracking(shipmentIdNum);
-
   const handleTracking = useCallback((data: any) => {
-    if (!data.userId) return;
+    if (!data?.userId) return;
 
     setVolunteers((prev) => ({
       ...prev,
@@ -51,7 +47,7 @@ export function MapScreen() {
   useSocketTracking(shipmentIdNum ?? 0, handleTracking);
 
   // =========================
-  // 📦 CARGAR PICKUP POINT REAL
+  // 📦 CARGAR PICKUP POINT
   // =========================
   useEffect(() => {
     async function loadPickupPoint() {
@@ -135,11 +131,6 @@ export function MapScreen() {
     });
   }, [pickupPoint, currentLocation, volunteers]);
 
-  // 🔍 DEBUG
-  console.log("📦 shipmentId:", shipmentIdNum);
-  console.log("📍 pickupPointId:", pickupPointIdNum);
-  console.log("👥 volunteers:", Object.keys(volunteers).length);
-
   return (
     <View style={StyleSheet.absoluteFillObject}>
       <MapView
@@ -152,7 +143,7 @@ export function MapScreen() {
           <Marker coordinate={currentLocation} title="Tú" pinColor="blue" />
         )}
 
-        {/* 🟢 PUNTO REAL */}
+        {/* 🟢 PUNTO */}
         {pickupPoint && (
           <Marker
             coordinate={{
@@ -164,7 +155,7 @@ export function MapScreen() {
           />
         )}
 
-        {/* 🔴 VOLUNTARIOS */}
+        {/* 🔴 VOLUNTARIOS EN TIEMPO REAL */}
         {Object.entries(volunteers).map(([userId, location]) => (
           <Marker
             key={userId}

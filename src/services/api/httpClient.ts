@@ -16,13 +16,11 @@ export async function httpClient<T>(
 ): Promise<T> {
   const requestUrl = `${API_BASE_URL}${path}`;
 
-  // 🔍 DEBUG (puedes quitarlo después)
-  console.log("🌐 Request URL:", requestUrl);
-
-  let response: Response;
+  // 🔥 DEBUG CLAVE
+  console.log("🌐 Request:", method, requestUrl);
 
   try {
-    response = await fetch(requestUrl, {
+    const response = await fetch(requestUrl, {
       method,
       headers: {
         "Content-Type": "application/json",
@@ -30,18 +28,31 @@ export async function httpClient<T>(
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-  } catch (error) {
-    console.error("❌ Network error:", error);
-    throw new Error(`Network request failed (${Platform.OS}) -> ${requestUrl}`);
-  }
 
-  if (!response.ok) {
-    const message = await response.text();
-    console.error("❌ API error:", message);
+    // 🔥 DEBUG RESPONSE
+    console.log("📡 Status:", response.status);
+
+    if (!response.ok) {
+      const message = await response.text();
+
+      console.error("❌ API ERROR:", message);
+
+      throw new Error(
+        message || `HTTP ${response.status} -> ${requestUrl}`,
+      );
+    }
+
+    return response.json() as Promise<T>;
+  } catch (error: any) {
+    console.error("❌ NETWORK ERROR FULL:", {
+      message: error.message,
+      url: requestUrl,
+      platform: Platform.OS,
+    });
+
+    // 🔥 ERROR MÁS CLARO (IMPORTANTE)
     throw new Error(
-      message || `Unexpected API error (${response.status}) -> ${requestUrl}`,
+      `No conecta con backend (${Platform.OS}) -> ${requestUrl}`,
     );
   }
-
-  return response.json() as Promise<T>;
 }
