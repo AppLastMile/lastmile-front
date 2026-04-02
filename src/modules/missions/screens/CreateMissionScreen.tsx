@@ -506,7 +506,10 @@ export function CreateMissionScreen() {
           >
             <Pressable
               className='flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
-              onPress={() => setIsCreateEventOpen((current) => !current)}
+              onPress={() => {
+                setIsCreateEventOpen(true);
+                setIsEventMenuOpen(false);
+              }}
             >
               <MaterialIcons color='#2f68d8' name='warning-amber' size={20} />
               <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>
