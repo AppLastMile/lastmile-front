@@ -26,6 +26,12 @@ import {
   createAuction,
   getAuctions,
 } from '@/services/api/auctionsService';
+import {
+  connectRealtime,
+  joinRealtimeRoom,
+  leaveRealtimeRoom,
+  onRealtime,
+} from '@/services/realtime/realtimeService';
 
 const STATUS_LABEL: Record<AuctionStatus, string> = {
   created: 'CREADA',
@@ -49,6 +55,15 @@ const STATUS_FG: Record<AuctionStatus, string> = {
   closed: '#4b5563',
   sold: '#92400e',
   cancelled: '#991b1b',
+};
+
+type AuctionLifecycleEvent = {
+  auctionId: number;
+  status?: AuctionStatus;
+  startedAt?: string | null;
+  endAt?: string | null;
+  currentPrice?: number | null;
+  winnerId?: number | null;
 };
 
 function getErrorMessage(error: unknown): string {
@@ -96,11 +111,10 @@ export function AuctionsListScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [productId, setProductId] = useState('');
+  const [itemName, setItemName] = useState('');
   const [initialPrice, setInitialPrice] = useState('');
   const [currency, setCurrency] = useState<'COP' | 'USD'>('COP');
   const [durationMinutes, setDurationMinutes] = useState('60');
-  const [campaignId, setCampaignId] = useState('');
   const [bidMode, setBidMode] = useState<AuctionBidMode>('free');
   const [bidIncrement, setBidIncrement] = useState('');
 
@@ -130,33 +144,162 @@ export function AuctionsListScreen() {
     initialLoad();
   }, [initialLoad]);
 
+  // Fallback sync: keeps auction list updated across devices even if backend does not
+  // broadcast a global websocket event for auction creation.
+  useEffect(() => {
+    if (!currentUser?.accessToken) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      fetchAuctions();
+    }, 3000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [currentUser?.accessToken, fetchAuctions]);
+
+  useEffect(() => {
+    if (!currentUser?.accessToken) {
+      return;
+    }
+
+    connectRealtime({
+      userId: currentUser.id,
+      role: currentUser.role,
+      token: currentUser.accessToken,
+    });
+
+    const rooms = [
+      `user:${currentUser.id}`,
+      `user:${currentUser.id}:notifications`,
+      `notifications:${currentUser.id}`,
+    ];
+    rooms.forEach((room) => joinRealtimeRoom(room));
+
+    let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+
+      refreshTimeout = setTimeout(() => {
+        fetchAuctions();
+      }, 250);
+    };
+
+    const applyLifecycleUpdate = (event: AuctionLifecycleEvent) => {
+      if (!event?.auctionId) return;
+
+      setAuctions((prev) =>
+        prev.map((auction) => {
+          if (auction.id !== event.auctionId) return auction;
+          return {
+            ...auction,
+            status: event.status ?? auction.status,
+            startedAt: event.startedAt ?? auction.startedAt,
+            endAt: event.endAt ?? auction.endAt,
+            currentPrice: event.currentPrice ?? auction.currentPrice,
+            winnerId: event.winnerId ?? auction.winnerId,
+          };
+        })
+      );
+    };
+
+    const offAuctionCreated = onRealtime('auction.created', () => {
+      scheduleRefresh();
+    });
+
+    const offAuctionNew = onRealtime('auction.new', () => {
+      scheduleRefresh();
+    });
+
+    const offAuctionStarted = onRealtime<AuctionLifecycleEvent>('auction.started', (event) => {
+      applyLifecycleUpdate({ ...event, status: event.status ?? 'active' });
+      scheduleRefresh();
+    });
+
+    const offAuctionStart = onRealtime<AuctionLifecycleEvent>('auction.start', (event) => {
+      applyLifecycleUpdate({ ...event, status: event.status ?? 'active' });
+      scheduleRefresh();
+    });
+
+    const offAuctionClosed = onRealtime<AuctionLifecycleEvent>('auction.closed', (event) => {
+      applyLifecycleUpdate({ ...event, status: event.status ?? 'closed' });
+      scheduleRefresh();
+    });
+
+    const offAuctionSold = onRealtime<AuctionLifecycleEvent>('auction.sold', (event) => {
+      applyLifecycleUpdate({ ...event, status: event.status ?? 'sold' });
+      scheduleRefresh();
+    });
+
+    const offAuctionCancelled = onRealtime<AuctionLifecycleEvent>('auction.cancelled', (event) => {
+      applyLifecycleUpdate({ ...event, status: event.status ?? 'cancelled' });
+      scheduleRefresh();
+    });
+
+    const offAuctionStatusChanged = onRealtime<AuctionLifecycleEvent>('auction.status.changed', (event) => {
+      applyLifecycleUpdate(event);
+      scheduleRefresh();
+    });
+
+    const offAuctionUpdated = onRealtime<AuctionLifecycleEvent>('auction.updated', (event) => {
+      applyLifecycleUpdate(event);
+      scheduleRefresh();
+    });
+
+    const offNotificationNew = onRealtime<{ notification?: { auctionId?: number | null }; data?: { auctionId?: number | null }; auctionId?: number | null }>('notification.new', (payload) => {
+      const normalizedPayload = payload?.notification ?? payload?.data ?? payload;
+      if (normalizedPayload?.auctionId !== undefined && normalizedPayload?.auctionId !== null) {
+        scheduleRefresh();
+      }
+    });
+
+    return () => {
+      offAuctionCreated();
+      offAuctionNew();
+      offAuctionStarted();
+      offAuctionStart();
+      offAuctionClosed();
+      offAuctionSold();
+      offAuctionCancelled();
+      offAuctionStatusChanged();
+      offAuctionUpdated();
+      offNotificationNew();
+      rooms.forEach((room) => leaveRealtimeRoom(room));
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+    };
+  }, [currentUser, fetchAuctions]);
+
   const handleOpenCreate = () => {
     setFormError(null);
-    setProductId('');
+    setItemName('');
     setInitialPrice('');
     setCurrency('COP');
     setDurationMinutes('60');
-    setCampaignId('');
     setBidMode('free');
     setBidIncrement('');
     setIsCreateOpen(true);
   };
 
   const canSubmit =
-    productId.trim().length > 0 &&
+    itemName.trim().length >= 2 &&
     initialPrice.trim().length > 0 &&
     durationMinutes.trim().length > 0 &&
     (bidMode === 'free' || bidIncrement.trim().length > 0) &&
     !isSubmitting;
 
   const handleSubmit = async () => {
-    const parsedProductId = parseInt(productId, 10);
+    const trimmedItemName = itemName.trim();
     const parsedInitialPrice = parseFloat(initialPrice);
     const parsedDuration = parseInt(durationMinutes, 10);
-    const parsedCampaignId = campaignId.trim() ? parseInt(campaignId, 10) : undefined;
 
-    if (isNaN(parsedProductId) || parsedProductId <= 0) {
-      setFormError('El ID del producto debe ser un número válido mayor a 0.');
+    if (trimmedItemName.length < 2) {
+      setFormError('El nombre del artículo debe tener al menos 2 caracteres.');
       return;
     }
     if (isNaN(parsedInitialPrice) || parsedInitialPrice <= 0) {
@@ -183,11 +326,10 @@ export function AuctionsListScreen() {
     try {
       const created = await createAuction(
         {
-          productId: parsedProductId,
+          itemName: trimmedItemName,
           initialPrice: parsedInitialPrice,
           durationMinutes: parsedDuration,
           currency,
-          campaignId: parsedCampaignId,
           bidMode,
           bidIncrement: parsedBidIncrement,
         },
@@ -409,7 +551,7 @@ export function AuctionsListScreen() {
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <FontAwesome5 color='#9ca3af' name='tag' size={11} />
                         <Text style={{ marginLeft: 4, fontSize: 12, color: '#6b7280' }}>
-                          #{auction.id}
+                          Subasta N° {auction.id}
                         </Text>
                       </View>
                     </View>
@@ -458,7 +600,7 @@ export function AuctionsListScreen() {
                     color: '#27436d',
                   }}
                 >
-                  ID del producto *
+                  Nombre del artículo *
                 </Text>
                 <TextInput
                   style={{
@@ -470,11 +612,10 @@ export function AuctionsListScreen() {
                     paddingVertical: 12,
                     color: '#18335f',
                   }}
-                  keyboardType='number-pad'
-                  onChangeText={setProductId}
-                  placeholder='Ej: 1'
+                  onChangeText={setItemName}
+                  placeholder='Ej: Bicicleta de montaña'
                   placeholderTextColor='#8ea6c8'
-                  value={productId}
+                  value={itemName}
                 />
 
                 <Text
@@ -570,34 +711,6 @@ export function AuctionsListScreen() {
                   placeholder='60'
                   placeholderTextColor='#8ea6c8'
                   value={durationMinutes}
-                />
-
-                <Text
-                  style={{
-                    marginTop: 12,
-                    marginBottom: 4,
-                    fontSize: 13,
-                    fontWeight: '700',
-                    color: '#27436d',
-                  }}
-                >
-                  ID de campana (opcional)
-                </Text>
-                <TextInput
-                  style={{
-                    borderWidth: 1,
-                    borderColor: '#d3e2fb',
-                    borderRadius: 14,
-                    backgroundColor: '#f8fbff',
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    color: '#18335f',
-                  }}
-                  keyboardType='number-pad'
-                  onChangeText={setCampaignId}
-                  placeholder='Ej: 3'
-                  placeholderTextColor='#8ea6c8'
-                  value={campaignId}
                 />
 
                 <Text
