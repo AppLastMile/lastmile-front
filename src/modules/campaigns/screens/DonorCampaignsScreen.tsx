@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
@@ -9,6 +9,7 @@ import { CampaignChatModal } from '@/modules/campaigns/components/CampaignChatMo
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
 import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
 import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
+import { addNotification } from '@/modules/notifications/state/notificationsStore';
 import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
 import {
   createItemDonation,
@@ -21,6 +22,7 @@ import {
   buildInventoryMap,
   ChatMessage,
   ChatMessageCreatedEvent,
+  CampaignFundsRealtimeEvent,
   formatMoney,
   getErrorMessage,
   InventoryRealtimeEvent,
@@ -73,6 +75,57 @@ export function DonorCampaignsScreen() {
   const [chatCampaignId, setChatCampaignId] = useState<number | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatByCampaign, setChatByCampaign] = useState<Record<number, ChatMessage[]>>({});
+  const hasCampaignSnapshot = useRef(false);
+
+  const getProgress = useCallback((campaign: Campaign) => getProgressValue(campaign), []);
+
+  const syncCampaigns = useCallback(
+    (nextCampaigns: Campaign[], notifyChanges = true) => {
+      setCampaigns((prevCampaigns) => {
+        if (!hasCampaignSnapshot.current) {
+          hasCampaignSnapshot.current = true;
+          return nextCampaigns;
+        }
+
+        if (!notifyChanges) {
+          return nextCampaigns;
+        }
+
+        const previousById = new Map(prevCampaigns.map((campaign) => [campaign.id, campaign]));
+
+        nextCampaigns.forEach((campaign) => {
+          const previous = previousById.get(campaign.id);
+
+          if (!previous) {
+            addNotification({
+              notificationId: Date.now() + campaign.id,
+              userId: currentUser?.id ?? 0,
+              message: `Nueva campaña creada: ${campaign.name}`,
+              auctionId: null,
+              createdAt: new Date().toISOString(),
+            });
+            return;
+          }
+
+          const previousProgress = getProgress(previous);
+          const currentProgress = getProgress(campaign);
+
+          if (previousProgress < 100 && currentProgress >= 100) {
+            addNotification({
+              notificationId: Date.now() + campaign.id + 1000,
+              userId: currentUser?.id ?? 0,
+              message: `Campaña cerrada por meta alcanzada: ${campaign.name}`,
+              auctionId: null,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        });
+
+        return nextCampaigns;
+      });
+    },
+    [currentUser?.id, getProgress]
+  );
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -88,10 +141,10 @@ export function DonorCampaignsScreen() {
     const failedSources: string[] = [];
 
     if (campaignsResult.status === 'fulfilled') {
-      setCampaigns(campaignsResult.value.data);
+      syncCampaigns(campaignsResult.value.data, false);
     } else {
       failedSources.push(`campanas (${getErrorMessage(campaignsResult.reason)})`);
-      setCampaigns([]);
+      syncCampaigns([], false);
     }
 
     if (eventsResult.status === 'fulfilled') {
@@ -120,7 +173,7 @@ export function DonorCampaignsScreen() {
     }
 
     setIsLoading(false);
-  }, []);
+  }, [syncCampaigns]);
 
   useEffect(() => {
     loadData();
@@ -162,6 +215,16 @@ export function DonorCampaignsScreen() {
     role: currentUser?.role,
     token: currentUser?.accessToken,
   });
+
+  const refreshCampaigns = useCallback(async () => {
+    try {
+      const campaignsResult = await getCampaigns();
+
+      syncCampaigns(campaignsResult.data, true);
+    } catch {
+      // Keep the last visible snapshot when the refresh fails.
+    }
+  }, [syncCampaigns]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -261,12 +324,62 @@ export function DonorCampaignsScreen() {
       }
     });
 
+    const offCampaignFundsUpdated = onRealtime<CampaignFundsRealtimeEvent>(
+      'campaign.money.updated',
+      async (event) => {
+        if (!event?.campaignId) {
+          return;
+        }
+
+        await refreshCampaigns();
+      }
+    );
+
+    const offDonationCreated = onRealtime<CampaignFundsRealtimeEvent>('donation.money.created', async (event) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      await refreshCampaigns();
+    });
+
+    const offCampaignUpdated = onRealtime<CampaignFundsRealtimeEvent>('campaign.updated', async (event) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      await refreshCampaigns();
+    });
+
+    const offCampaignCreated = onRealtime<CampaignFundsRealtimeEvent>('campaign.created', async () => {
+      await refreshCampaigns();
+    });
+
+    const offCampaignNew = onRealtime<CampaignFundsRealtimeEvent>('campaign.new', async () => {
+      await refreshCampaigns();
+    });
+
+    const offCampaignClosed = onRealtime<CampaignFundsRealtimeEvent>('campaign.closed', async () => {
+      await refreshCampaigns();
+    });
+
+    const refreshTimer = setInterval(() => {
+      void refreshCampaigns();
+    }, 15000);
+
     return () => {
       offChatMessageCreated();
       offInventoryUpdated();
+      offCampaignFundsUpdated();
+      offDonationCreated();
+      offCampaignUpdated();
+      offCampaignCreated();
+      offCampaignNew();
+      offCampaignClosed();
+      clearInterval(refreshTimer);
       rooms.forEach((room) => leaveRealtimeRoom(room));
     };
-  }, [campaigns, currentUser, donorId]);
+  }, [campaigns, currentUser, donorId, refreshCampaigns]);
 
   const handleDonateMoney = async (campaign: Campaign) => {
     const value = Number((moneyDraftByCampaign[campaign.id] ?? '').replaceAll(/\D/g, ''));
@@ -293,13 +406,7 @@ export function DonorCampaignsScreen() {
     try {
       await createMoneyDonation({ campaignId: campaign.id, donorId, amount: value });
 
-      setCampaigns((prev) =>
-        prev.map((campaignItem) =>
-          campaignItem.id === campaign.id
-            ? { ...campaignItem, collectedMoney: campaignItem.collectedMoney + value }
-            : campaignItem
-        )
-      );
+      await refreshCampaigns();
 
       setMoneyDraftByCampaign((prev) => ({ ...prev, [campaign.id]: '' }));
       setDonationFeedbackByCampaign((prev) => ({ ...prev, [campaign.id]: 'Gracias por tu aporte.' }));
@@ -426,9 +533,6 @@ export function DonorCampaignsScreen() {
 
         <View className='mt-3 flex-row items-center justify-between'>
           <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
-          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadData}>
-            <Text className='font-semibold text-white'>Recargar</Text>
-          </Pressable>
         </View>
 
         {isLoading ? (
@@ -447,6 +551,7 @@ export function DonorCampaignsScreen() {
           {campaigns.map((campaignItem, index) => {
             const eventInfo = eventsById.get(campaignItem.eventId);
             const progress = getProgressValue(campaignItem);
+            const isClosed = progress >= 100;
             const inventory = inventoryByCampaign[campaignItem.id] ?? {};
             const physicalInventorySummary = PHYSICAL_DONATION_OPTIONS.map((option) => ({
               label: option.label,
@@ -460,11 +565,28 @@ export function DonorCampaignsScreen() {
 
             return (
               <Animated.View
-                className='rounded-2xl border border-[#d8e6ff] bg-white p-4'
+                className='relative overflow-hidden rounded-2xl border border-[#d8e6ff] bg-white p-4'
                 entering={FadeInUp.delay(index * 45).duration(240)}
                 key={campaignItem.id}
               >
-                <View className='flex-row items-start justify-between'>
+                {isClosed ? (
+                  <View className='absolute inset-0 z-10 items-center justify-center bg-[#6b7280cc] px-4'>
+                    <View className='w-full rounded-2xl border border-white/20 bg-white px-4 py-4 shadow-lg'>
+                      <Text className='text-center text-[11px] font-bold uppercase tracking-[1.6px] text-[#0f7a46]'>
+                        Campaña cerrada
+                      </Text>
+                      <Text className='mt-1 text-center text-lg font-extrabold text-[#16325d]'>
+                        Meta alcanzada
+                      </Text>
+                      <Text className='mt-2 text-center text-sm text-[#4d648a]'>
+                        Esta campaña llegó al 100% de su objetivo y ya no acepta donaciones.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <View className={isClosed ? 'opacity-30' : ''}>
+                  <View className='flex-row items-start justify-between'>
                   <View className='flex-1 pr-3'>
                     <Text className='text-base font-extrabold text-[#1b3259]'>{campaignItem.name}</Text>
                     <Text className='mt-1 text-xs text-[#5d7399]'>
@@ -485,32 +607,32 @@ export function DonorCampaignsScreen() {
                       <Text className='text-[10px] font-bold text-white'>Chat</Text>
                     </Pressable>
                   </View>
-                </View>
-
-                <Text className='mt-3 text-sm text-[#4d648a]' numberOfLines={3}>
-                  {campaignItem.description || 'Campana humanitaria en curso.'}
-                </Text>
-
-                <View className='mt-3 flex-row gap-2'>
-                  <View className='flex-1 rounded-xl bg-[#edf3ff] p-3'>
-                    <Text className='text-xs font-semibold text-[#4b648d]'>Recaudado</Text>
-                    <Text className='mt-1 text-sm font-extrabold text-[#1f4fa7]'>
-                      {formatMoney(campaignItem.collectedMoney)}
-                    </Text>
                   </View>
-                  <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
-                    <Text className='text-xs font-semibold text-[#4b648d]'>Meta</Text>
-                    <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
-                      {formatMoney(campaignItem.goalMoney)}
-                    </Text>
+
+                  <Text className='mt-3 text-sm text-[#4d648a]' numberOfLines={3}>
+                    {campaignItem.description || 'Campana humanitaria en curso.'}
+                  </Text>
+
+                  <View className='mt-3 flex-row gap-2'>
+                    <View className='flex-1 rounded-xl bg-[#edf3ff] p-3'>
+                      <Text className='text-xs font-semibold text-[#4b648d]'>Recaudado</Text>
+                      <Text className='mt-1 text-sm font-extrabold text-[#1f4fa7]'>
+                        {formatMoney(campaignItem.collectedMoney)}
+                      </Text>
+                    </View>
+                    <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
+                      <Text className='text-xs font-semibold text-[#4b648d]'>Meta</Text>
+                      <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
+                        {formatMoney(campaignItem.goalMoney)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
 
-                <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
-                  <View className='h-full rounded-full bg-[#1f5fe0]' style={{ width: `${Math.max(6, progress)}%` }} />
-                </View>
+                  <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
+                    <View className='h-full rounded-full bg-[#1f5fe0]' style={{ width: `${Math.max(6, progress)}%` }} />
+                  </View>
 
-                {progress < 100 ? (
+                  {isClosed ? null : (
                   <View className='mt-3 flex-row items-center gap-2'>
                     <TextInput
                       className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
@@ -531,85 +653,86 @@ export function DonorCampaignsScreen() {
                       </Text>
                     </Pressable>
                   </View>
-                ) : (
-                  <Text className='mt-3 text-xs font-semibold text-[#1b7b45]'>Campana completada.</Text>
-                )}
+                  )}
 
-                {donationFeedbackByCampaign[campaignItem.id] ? (
-                  <Text className='mt-2 text-xs text-[#3a5176]'>
-                    {donationFeedbackByCampaign[campaignItem.id]}
-                  </Text>
-                ) : null}
-
-                <View className='mt-3 rounded-xl bg-[#f6f9ff] p-3'>
-                  <Text className='text-xs font-semibold text-[#27436d]'>Donar articulos fisicos</Text>
-
-                  <Pressable
-                    className='mt-2 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2'
-                    onPress={() =>
-                      setIsPhysicalDropdownOpenByCampaign((prev) => ({
-                        ...prev,
-                        [campaignItem.id]: !isDropdownOpen,
-                      }))
-                    }
-                  >
-                    <Text className='text-[#1f365d]'>Articulo: {selectedItemLabel}</Text>
-                  </Pressable>
-
-                  {isDropdownOpen ? (
-                    <View className='mt-2 overflow-hidden rounded-xl border border-[#d6e3fb] bg-white'>
-                      {PHYSICAL_DONATION_OPTIONS.map((option) => (
-                        <Pressable
-                          className='border-b border-[#edf3ff] px-3 py-2'
-                          key={option.key}
-                          onPress={() => {
-                            setSelectedPhysicalItemByCampaign((prev) => ({
-                              ...prev,
-                              [campaignItem.id]: option.key,
-                            }));
-                            setIsPhysicalDropdownOpenByCampaign((prev) => ({
-                              ...prev,
-                              [campaignItem.id]: false,
-                            }));
-                          }}
-                        >
-                          <Text className='text-[#1f365d]'>{option.label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
+                  {donationFeedbackByCampaign[campaignItem.id] ? (
+                    <Text className='mt-2 text-xs text-[#3a5176]'>
+                      {donationFeedbackByCampaign[campaignItem.id]}
+                    </Text>
                   ) : null}
 
-                  <View className='mt-2 flex-row items-center gap-2'>
-                    <TextInput
-                      className='flex-1 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2 text-[#18335f]'
-                      keyboardType='number-pad'
-                      onChangeText={(value) =>
-                        setPhysicalQuantityByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                      }
-                      placeholder='Cantidad'
-                      placeholderTextColor='#8ea6c8'
-                      value={physicalQuantityByCampaign[campaignItem.id] ?? ''}
-                    />
-                    <Pressable
-                      className='rounded-xl bg-[#1d8a51] px-3 py-2'
-                      onPress={() => handleDonatePhysicalItem(campaignItem.id)}
-                    >
-                      <Text className='text-xs font-bold text-white'>
-                        {isDonatingItemsByCampaign[campaignItem.id] ? 'Donando...' : 'Donar articulo'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
+                  {isClosed ? null : (
+                  <View className='mt-3 rounded-xl bg-[#f6f9ff] p-3'>
+                    <Text className='text-xs font-semibold text-[#27436d]'>Donar articulos fisicos</Text>
 
-                <View className='mt-3 rounded-xl bg-[#edf3ff] p-3'>
-                  <Text className='text-xs font-semibold text-[#27436d]'>Elementos donados</Text>
-                  {physicalInventorySummary.length === 0 ? (
-                    <Text className='mt-1 text-xs text-[#5d7399]'>Aun no hay elementos donados.</Text>
-                  ) : (
-                    <Text className='mt-1 text-xs text-[#1f365d]'>
-                      {physicalInventorySummary.map((entry) => `${entry.label}: ${entry.quantity}`).join(' | ')}
-                    </Text>
+                    <Pressable
+                      className='mt-2 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2'
+                      onPress={() =>
+                        setIsPhysicalDropdownOpenByCampaign((prev) => ({
+                          ...prev,
+                          [campaignItem.id]: !isDropdownOpen,
+                        }))
+                      }
+                    >
+                      <Text className='text-[#1f365d]'>Articulo: {selectedItemLabel}</Text>
+                    </Pressable>
+
+                    {isDropdownOpen ? (
+                      <View className='mt-2 overflow-hidden rounded-xl border border-[#d6e3fb] bg-white'>
+                        {PHYSICAL_DONATION_OPTIONS.map((option) => (
+                          <Pressable
+                            className='border-b border-[#edf3ff] px-3 py-2'
+                            key={option.key}
+                            onPress={() => {
+                              setSelectedPhysicalItemByCampaign((prev) => ({
+                                ...prev,
+                                [campaignItem.id]: option.key,
+                              }));
+                              setIsPhysicalDropdownOpenByCampaign((prev) => ({
+                                ...prev,
+                                [campaignItem.id]: false,
+                              }));
+                            }}
+                          >
+                            <Text className='text-[#1f365d]'>{option.label}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    <View className='mt-2 flex-row items-center gap-2'>
+                      <TextInput
+                        className='flex-1 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2 text-[#18335f]'
+                        keyboardType='number-pad'
+                        onChangeText={(value) =>
+                          setPhysicalQuantityByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
+                        }
+                        placeholder='Cantidad'
+                        placeholderTextColor='#8ea6c8'
+                        value={physicalQuantityByCampaign[campaignItem.id] ?? ''}
+                      />
+                      <Pressable
+                        className='rounded-xl bg-[#1d8a51] px-3 py-2'
+                        onPress={() => handleDonatePhysicalItem(campaignItem.id)}
+                      >
+                        <Text className='text-xs font-bold text-white'>
+                          {isDonatingItemsByCampaign[campaignItem.id] ? 'Donando...' : 'Donar articulo'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
                   )}
+
+                  <View className='mt-3 rounded-xl bg-[#edf3ff] p-3'>
+                    <Text className='text-xs font-semibold text-[#27436d]'>Elementos donados</Text>
+                    {physicalInventorySummary.length === 0 ? (
+                      <Text className='mt-1 text-xs text-[#5d7399]'>Aun no hay elementos donados.</Text>
+                    ) : (
+                      <Text className='mt-1 text-xs text-[#1f365d]'>
+                        {physicalInventorySummary.map((entry) => `${entry.label}: ${entry.quantity}`).join(' | ')}
+                      </Text>
+                    )}
+                  </View>
                 </View>
               </Animated.View>
             );
