@@ -204,18 +204,6 @@ export function MissionsScreen() {
               <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Misiones</Text>
             </View>
           </View>
-          <View
-            style={{
-              backgroundColor: '#e8f0ff',
-              borderRadius: 999,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-            }}
-          >
-            <Text style={{ fontSize: 11, fontWeight: '800', color: '#1f4fb6', letterSpacing: 0.5 }}>
-              ENTREGAS
-            </Text>
-          </View>
         </View>
 
         <View style={{ paddingHorizontal: 20 }}>
