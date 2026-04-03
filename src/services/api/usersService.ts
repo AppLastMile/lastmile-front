@@ -12,6 +12,12 @@ export type UserSummary = {
   role: UserRole;
 };
 
-export async function getUsers(page = 1, limit = 100) {
-  return httpClient<PaginatedResponse<UserSummary>>(`/users?page=${page}&limit=${limit}`);
+export async function getUsers(page = 1, limit = 100, token?: string) {
+  return httpClient<PaginatedResponse<UserSummary>>(`/users?page=${page}&limit=${limit}`, {
+    token,
+  });
+}
+
+export async function getUser(userId: number, token?: string) {
+  return httpClient<UserSummary>(`/users/${userId}`, { token });
 }
