@@ -217,9 +217,28 @@ export function CreateMissionScreen() {
     setIsLoadingEvents(false);
   }, []);
 
+  const refreshEventsSilently = useCallback(async () => {
+    try {
+      const response = await getEvents({ page: 1, limit: 100 });
+      setEvents(response.data);
+    } catch {
+      // Keep previous events when a background refresh fails.
+    }
+  }, []);
+
   useEffect(() => {
     loadMapData();
   }, [loadMapData]);
+
+  useEffect(() => {
+    const refreshId = setInterval(() => {
+      void refreshEventsSilently();
+    }, 3000);
+
+    return () => {
+      clearInterval(refreshId);
+    };
+  }, [refreshEventsSilently]);
 
   useFocusEffect(
     useCallback(() => {
@@ -488,7 +507,7 @@ export function CreateMissionScreen() {
           <View className='h-6 w-6 items-center justify-center rounded-full bg-[#e7efff]'>
             <FontAwesome5 color='#1f5fe0' name='crosshairs' size={11} />
           </View>
-          <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicacion</Text>
+          <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicación</Text>
         </Pressable>
       </View>
 
@@ -541,13 +560,6 @@ export function CreateMissionScreen() {
               <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>
                 Crear Evento (Desastre)
               </Text>
-            </Pressable>
-            <Pressable
-              className='mt-2 flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
-              onPress={loadMapData}
-            >
-              <MaterialIcons color='#2f68d8' name='refresh' size={20} />
-              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Recargar mapa</Text>
             </Pressable>
           </Animated.View>
         ) : null}
