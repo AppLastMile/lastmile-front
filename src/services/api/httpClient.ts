@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3001';
+const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const EXPO_PUBLIC_API_URL = process.env.EXPO_PUBLIC_API_URL;
 const EXPO_PUBLIC_NETWORK_DEBUG = process.env.EXPO_PUBLIC_NETWORK_DEBUG;
 const BACKEND_CONNECTION_ERROR_MESSAGE =
