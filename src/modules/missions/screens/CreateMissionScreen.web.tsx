@@ -168,9 +168,28 @@ export function CreateMissionScreen() {
     setIsLoadingEvents(false);
   }, []);
 
+  const refreshEventsSilently = useCallback(async () => {
+    try {
+      const response = await getEvents({ page: 1, limit: 100 });
+      setEvents(response.data);
+    } catch {
+      // Keep previous events when a background refresh fails.
+    }
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const refreshId = setInterval(() => {
+      void refreshEventsSilently();
+    }, 3000);
+
+    return () => {
+      clearInterval(refreshId);
+    };
+  }, [refreshEventsSilently]);
 
   useFocusEffect(
     useCallback(() => {
@@ -247,10 +266,6 @@ export function CreateMissionScreen() {
             onPress={() => setIsEventMenuOpen((current) => !current)}
           >
             <MaterialIcons color='#fff' name='warning' size={22} />
-          </Pressable>
-
-          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2' onPress={loadData}>
-            <Text className='font-semibold text-white'>Recargar inicio</Text>
           </Pressable>
         </View>
 
