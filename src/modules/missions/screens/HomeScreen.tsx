@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
+import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
 import {
   type EventSummary,
   getEvents,
@@ -88,6 +90,11 @@ export function HomeScreen() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [joinedEventIds, setJoinedEventIds] = useState<number[]>([]);
   const [pendingEventId, setPendingEventId] = useState<number | null>(null);
+  const { notifications, unreadCount, toastMessage, markAllAsRead } = useRealtimeNotifications({
+    userId: currentUser?.id,
+    role: currentUser?.role,
+    token: currentUser?.accessToken,
+  });
 
   const loadEvents = useCallback(async () => {
     if (!currentUser) {
@@ -200,18 +207,12 @@ export function HomeScreen() {
               <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Inicio</Text>
             </View>
           </View>
-          <View
-            style={{
-              backgroundColor: '#e8f0ff',
-              borderRadius: 999,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-            }}
-          >
-            <Text style={{ fontSize: 11, fontWeight: '800', color: '#1f4fb6', letterSpacing: 0.5 }}>
-              EVENTOS ACTIVOS
-            </Text>
-          </View>
+          <NotificationsBell
+            notifications={notifications}
+            onMarkAllAsRead={markAllAsRead}
+            toastMessage={toastMessage}
+            unreadCount={unreadCount}
+          />
         </View>
 
         <View style={{ paddingHorizontal: 20 }}>
