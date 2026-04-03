@@ -22,6 +22,8 @@ const COLOMBIA_CENTER: [number, number] = [4.5709, -74.2973];
 export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
+  const isVolunteer = currentUser?.role === 'volunteer';
+  const hasWelcomeBanner = isDonor || isVolunteer;
   const [showDonorWelcome, setShowDonorWelcome] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<EventSummary[]>([]);
@@ -73,12 +75,31 @@ export function MapScreen() {
     }
   }, []);
 
+  const refreshEventsSilently = useCallback(async () => {
+    try {
+      const response = await getEvents({ page: 1, limit: 100 });
+      setEvents(response.data);
+    } catch {
+      // Keep previous markers when a background refresh fails.
+    }
+  }, []);
+
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
 
   useEffect(() => {
-    if (!isDonor) {
+    const refreshId = setInterval(() => {
+      void refreshEventsSilently();
+    }, 3000);
+
+    return () => {
+      clearInterval(refreshId);
+    };
+  }, [refreshEventsSilently]);
+
+  useEffect(() => {
+    if (!hasWelcomeBanner) {
       return;
     }
 
@@ -91,7 +112,7 @@ export function MapScreen() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [isDonor]);
+  }, [hasWelcomeBanner]);
 
   useEffect(() => {
     if (!navigator?.geolocation) {
@@ -119,19 +140,6 @@ export function MapScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
-      <View className='px-4 pb-3 pt-3'>
-        <Text className='text-2xl font-extrabold text-[#16325d]'>Mapa de eventos</Text>
-        <Text className='mt-1 text-sm text-[#4d648a]'>
-          OpenStreetMap en web con marcadores en tiempo real de los eventos.
-        </Text>
-
-        {!isDonor ? (
-          <View className='mt-3 flex-row items-center justify-between'>
-            <Text className='text-sm font-semibold text-[#2a456e]'>Marcadores: {mappedEvents.length}</Text>
-          </View>
-        ) : null}
-      </View>
-
       <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
         <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
           <TileLayer
@@ -168,22 +176,28 @@ export function MapScreen() {
           ) : null}
         </MapContainer>
 
-        {isDonor && showDonorWelcome ? (
+        {hasWelcomeBanner && showDonorWelcome ? (
           <View className='absolute left-3 right-3 top-3 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'>
             <View className='flex-row items-center'>
               <View className='h-8 w-8 items-center justify-center rounded-full bg-[#eaf1ff]'>
-                <MaterialIcons color='#1f5fe0' name='volunteer-activism' size={18} />
+                <MaterialIcons color='#1f5fe0' name={isVolunteer ? 'group' : 'volunteer-activism'} size={18} />
               </View>
               <View className='ml-3 flex-1'>
-                <Text className='text-sm font-bold text-[#16325d]'>Bienvenido Donante</Text>
-                <Text className='text-xs text-[#5b7190]'>Apoya campanas activas desde el mapa y sigue tus aportes.</Text>
+                <Text className='text-sm font-bold text-[#16325d]'>
+                  {isVolunteer ? 'Bienvenido Voluntario' : 'Bienvenido Donante'}
+                </Text>
+                <Text className='text-xs text-[#5b7190]'>
+                  {isVolunteer
+                    ? 'Consulta los eventos activos en tiempo real para ubicar donde puedes apoyar.'
+                    : 'Apoya campanas activas desde el mapa y sigue tus aportes.'}
+                </Text>
               </View>
             </View>
           </View>
         ) : null}
 
         {isLoading ? (
-          <View className='absolute left-0 right-0 items-center' style={{ top: isDonor && showDonorWelcome ? 86 : 12 }}>
+          <View className='absolute left-0 right-0 items-center' style={{ top: hasWelcomeBanner && showDonorWelcome ? 86 : 12 }}>
             <View className='rounded-full bg-white px-4 py-2'>
               <ActivityIndicator color='#1f5fe0' size='small' />
             </View>
@@ -191,7 +205,7 @@ export function MapScreen() {
         ) : null}
 
         {error ? (
-          <View className='absolute left-3 right-3 rounded-xl bg-[#ffecef] px-3 py-2' style={{ top: isDonor && showDonorWelcome ? 86 : 12 }}>
+          <View className='absolute left-3 right-3 rounded-xl bg-[#ffecef] px-3 py-2' style={{ top: hasWelcomeBanner && showDonorWelcome ? 86 : 12 }}>
             <Text className='text-sm text-[#a1263d]'>{error}</Text>
           </View>
         ) : null}
