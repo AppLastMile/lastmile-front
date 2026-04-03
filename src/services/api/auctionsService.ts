@@ -9,7 +9,6 @@ export type AuctionBidMode = 'free' | 'fixed_increment';
 export type Auction = {
   id: number;
   productId: number;
-  campaignId: number | null;
   sellerId: number;
   itemName: string;
   description: string | null;
@@ -47,11 +46,10 @@ export type Bid = {
 };
 
 export type CreateAuctionPayload = {
-  productId: number;
+  itemName: string;
   initialPrice: number;
   durationMinutes: number;
   currency?: string;
-  campaignId?: number;
   bidMode?: AuctionBidMode;
   bidIncrement?: number;
 };
@@ -83,8 +81,8 @@ export async function getAuction(id: number) {
   return httpClient<Auction>(`/auctions/${id}`);
 }
 
-export async function getCampaignAuctions(campaignId: number, status?: 'active' | 'sold' | 'all') {
-  const statusParam = status ?? 'all';
+export async function getCampaignAuctions(campaignId: number, status: 'active' | 'sold' | 'all' = 'all') {
+  const statusParam = status;
   return httpClient<PaginatedResponse<Auction>>(`/campaigns/${campaignId}/auctions?status=${statusParam}&page=1&limit=100`);
 }
 
@@ -110,8 +108,10 @@ export async function startAuction(id: number, token?: string) {
   });
 }
 
-export async function getAuctionBids(id: number) {
-  return httpClient<AuctionBid[]>(`/auctions/${id}/bids`);
+export async function getAuctionBids(id: number, token?: string) {
+  return httpClient<AuctionBid[]>(`/auctions/${id}/bids`, {
+    token,
+  });
 }
 
 export async function placeBid(auctionId: number, payload: PlaceBidPayload, token?: string) {
