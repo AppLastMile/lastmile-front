@@ -34,31 +34,29 @@ export function CreateAuctionScreen() {
   const router = useRouter();
   const { currentUser } = useAuthSession();
 
-  const [productId, setProductId] = useState('');
+  const [itemName, setItemName] = useState('');
   const [initialPrice, setInitialPrice] = useState('');
   const [currency, setCurrency] = useState<'COP' | 'USD'>('COP');
   const [durationMinutes, setDurationMinutes] = useState('60');
-  const [campaignId, setCampaignId] = useState('');
   const [bidMode, setBidMode] = useState<AuctionBidMode>('free');
   const [bidIncrement, setBidIncrement] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const canSubmit =
-    productId.trim().length > 0 &&
+    itemName.trim().length >= 2 &&
     initialPrice.trim().length > 0 &&
     durationMinutes.trim().length > 0 &&
     (bidMode === 'free' || bidIncrement.trim().length > 0) &&
     !isSubmitting;
 
   const handleSubmit = async () => {
-    const parsedProductId = parseInt(productId, 10);
+    const trimmedItemName = itemName.trim();
     const parsedInitialPrice = parseFloat(initialPrice);
     const parsedDuration = parseInt(durationMinutes, 10);
-    const parsedCampaignId = campaignId.trim() ? parseInt(campaignId, 10) : undefined;
 
-    if (isNaN(parsedProductId) || parsedProductId <= 0) {
-      setFormError('El ID del producto debe ser un número válido mayor a 0.');
+    if (trimmedItemName.length < 2) {
+      setFormError('El nombre del artículo debe tener al menos 2 caracteres.');
       return;
     }
     if (isNaN(parsedInitialPrice) || parsedInitialPrice <= 0) {
@@ -85,11 +83,10 @@ export function CreateAuctionScreen() {
     try {
       await createAuction(
         {
-          productId: parsedProductId,
+          itemName: trimmedItemName,
           initialPrice: parsedInitialPrice,
           durationMinutes: parsedDuration,
           currency,
-          campaignId: parsedCampaignId,
           bidMode,
           bidIncrement: parsedBidIncrement,
         },
@@ -166,7 +163,7 @@ export function CreateAuctionScreen() {
             }}
           >
             <Text style={{ fontSize: 13, fontWeight: '700', color: '#27436d', marginBottom: 4 }}>
-              ID del producto *
+              Nombre del artículo *
             </Text>
             <TextInput
               style={{
@@ -179,11 +176,10 @@ export function CreateAuctionScreen() {
                 color: '#18335f',
                 marginBottom: 14,
               }}
-              keyboardType='number-pad'
-              onChangeText={setProductId}
-              placeholder='Ej: 1'
+              onChangeText={setItemName}
+              placeholder='Ej: Bicicleta de montaña'
               placeholderTextColor='#8ea6c8'
-              value={productId}
+              value={itemName}
             />
 
             <Text style={{ fontSize: 13, fontWeight: '700', color: '#27436d', marginBottom: 4 }}>
@@ -257,27 +253,6 @@ export function CreateAuctionScreen() {
               placeholder='60'
               placeholderTextColor='#8ea6c8'
               value={durationMinutes}
-            />
-
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#27436d', marginBottom: 4 }}>
-              ID de campana (opcional)
-            </Text>
-            <TextInput
-              style={{
-                borderWidth: 1,
-                borderColor: '#d3e2fb',
-                borderRadius: 14,
-                backgroundColor: '#f8fbff',
-                paddingHorizontal: 16,
-                paddingVertical: 12,
-                color: '#18335f',
-                marginBottom: 14,
-              }}
-              keyboardType='number-pad'
-              onChangeText={setCampaignId}
-              placeholder='Ej: 3'
-              placeholderTextColor='#8ea6c8'
-              value={campaignId}
             />
 
             <Text style={{ fontSize: 13, fontWeight: '700', color: '#27436d', marginBottom: 8 }}>
