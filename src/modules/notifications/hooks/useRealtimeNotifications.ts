@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   connectRealtime,
@@ -12,6 +12,7 @@ import {
   clearUnreadNotifications,
   subscribeNotifications,
 } from '@/modules/notifications/state/notificationsStore';
+import { getEvents } from '@/services/api/eventsService';
 
 type RealtimeNotificationPayload = {
   id?: number;
@@ -32,6 +33,16 @@ type RealtimeChatMessagePayload = {
   authorName?: string;
   message?: string;
   createdAt?: string;
+};
+
+type RealtimeEventCreatedPayload = {
+  id?: number;
+  eventId?: number;
+  name?: string;
+  city?: string;
+  createdAt?: string;
+  data?: RealtimeEventCreatedPayload;
+  event?: RealtimeEventCreatedPayload;
 };
 
 export type NotificationItem = {
@@ -72,10 +83,24 @@ function unwrapNotificationPayload(payload: RealtimeNotificationPayload): Realti
   return payload;
 }
 
+function unwrapEventPayload(payload: RealtimeEventCreatedPayload): RealtimeEventCreatedPayload {
+  if (payload.data) {
+    return payload.data;
+  }
+
+  if (payload.event) {
+    return payload.event;
+  }
+
+  return payload;
+}
+
 export function useRealtimeNotifications({ userId, role, token }: UseRealtimeNotificationsArgs) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const hasEventsSnapshotRef = useRef(false);
+  const knownEventIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     return subscribeNotifications((nextSnapshot) => {
@@ -170,9 +195,53 @@ export function useRealtimeNotifications({ userId, role, token }: UseRealtimeNot
       addNotificationToStore(chatNotification);
     });
 
+    const offEventCreated = onRealtime<RealtimeEventCreatedPayload>('event.created', (payload) => {
+      if (role !== 'donor' || !payload) {
+        return;
+      }
+
+      const eventPayload = unwrapEventPayload(payload);
+      const eventId = Number(eventPayload.eventId ?? eventPayload.id ?? 0);
+      const eventCity = eventPayload.city?.trim() || 'una nueva ciudad';
+      const eventName = eventPayload.name?.trim();
+
+      addNotificationToStore({
+        notificationId: eventId > 0 ? 2_000_000 + eventId : Date.now(),
+        userId,
+        message: eventName
+          ? `Se ha creado un nuevo evento en ${eventCity}: ${eventName}`
+          : `Se ha creado un nuevo evento en ${eventCity}`,
+        auctionId: null,
+        createdAt: eventPayload.createdAt ?? new Date().toISOString(),
+      });
+    });
+
+    const offEventNew = onRealtime<RealtimeEventCreatedPayload>('event.new', (payload) => {
+      if (role !== 'donor' || !payload) {
+        return;
+      }
+
+      const eventPayload = unwrapEventPayload(payload);
+      const eventId = Number(eventPayload.eventId ?? eventPayload.id ?? 0);
+      const eventCity = eventPayload.city?.trim() || 'una nueva ciudad';
+      const eventName = eventPayload.name?.trim();
+
+      addNotificationToStore({
+        notificationId: eventId > 0 ? 2_000_000 + eventId : Date.now(),
+        userId,
+        message: eventName
+          ? `Se ha creado un nuevo evento en ${eventCity}: ${eventName}`
+          : `Se ha creado un nuevo evento en ${eventCity}`,
+        auctionId: null,
+        createdAt: eventPayload.createdAt ?? new Date().toISOString(),
+      });
+    });
+
     return () => {
       offNotification();
       offChatMessageCreated();
+      offEventCreated();
+      offEventNew();
       rooms.forEach((room) => leaveRealtimeRoom(room));
     };
   }, [role, token, userId]);
@@ -190,6 +259,63 @@ export function useRealtimeNotifications({ userId, role, token }: UseRealtimeNot
       clearTimeout(timeoutId);
     };
   }, [toastMessage]);
+
+  useEffect(() => {
+    if (!userId || role !== 'donor') {
+      return;
+    }
+
+    let isMounted = true;
+
+    const syncEvents = async (notifyChanges: boolean) => {
+      try {
+        const response = await getEvents({ page: 1, limit: 100 });
+        const nextEvents = response.data;
+        const nextEventIds = new Set(nextEvents.map((eventItem) => eventItem.id));
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!hasEventsSnapshotRef.current) {
+          hasEventsSnapshotRef.current = true;
+          knownEventIdsRef.current = nextEventIds;
+          return;
+        }
+
+        if (notifyChanges) {
+          nextEvents.forEach((eventItem) => {
+            if (knownEventIdsRef.current.has(eventItem.id)) {
+              return;
+            }
+
+            addNotificationToStore({
+              notificationId: 2_000_000 + eventItem.id,
+              userId,
+              message: `Se ha creado un nuevo evento en ${eventItem.city}: ${eventItem.name}`,
+              auctionId: null,
+              createdAt: new Date().toISOString(),
+            });
+          });
+        }
+
+        knownEventIdsRef.current = nextEventIds;
+      } catch {
+        // Keep current snapshot when events cannot be fetched.
+      }
+    };
+
+    void syncEvents(false);
+
+    const pollingId = setInterval(() => {
+      void syncEvents(true);
+    }, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollingId);
+    };
+  }, [role, userId]);
 
   const sortedNotifications = useMemo(
     () =>
