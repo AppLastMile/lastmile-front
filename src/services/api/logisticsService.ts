@@ -23,34 +23,72 @@ export type ShipmentStatus = 'pending' | 'assigned' | 'in_transit' | 'delivered'
 
 export type Shipment = {
   id: number;
-  status: ShipmentStatus;
-  pickupPointId?: number;
+  campaignId: number;
   eventId?: number;
-  assignedVolunteerId?: number | null;
+  pickupPointId: number;
+  assignedVolunteerId: number | null;
+  status: ShipmentStatus;
+  createdAt: string;
 };
 
-export async function getPickupPoints(page = 1, limit = 100) {
+export type CreateShipmentPayload = {
+  campaignId: number;
+  pickupPointId: number;
+};
+
+export async function getPickupPoints(page = 1, limit = 100, token?: string) {
   return httpClient<PaginatedResponse<PickupPoint>>(
-    `/logistics/pickup-points?page=${page}&limit=${limit}`
+    `/logistics/pickup-points?page=${page}&limit=${limit}`,
+    { token }
   );
 }
 
-export async function createPickupPoint(payload: CreatePickupPointPayload) {
+export async function createPickupPoint(payload: CreatePickupPointPayload, token?: string) {
   return httpClient<PickupPoint>('/logistics/pickup-points', {
     method: 'POST',
+    token,
     body: payload,
   });
 }
 
-export async function getShipments(page = 1, limit = 100) {
+export async function getShipments(page = 1, limit = 100, token?: string) {
   return httpClient<PaginatedResponse<Shipment>>(
-    `/logistics/shipments?page=${page}&limit=${limit}`
+    `/logistics/shipments?page=${page}&limit=${limit}`,
+    { token }
   );
 }
 
-export async function assignShipmentVolunteer(shipmentId: number, volunteerId: number) {
+export async function assignShipmentVolunteer(shipmentId: number, volunteerId: number, token?: string) {
   return httpClient<Shipment>(`/logistics/shipments/${shipmentId}/assign-volunteer`, {
     method: 'PATCH',
+    token,
     body: { volunteerId },
+  });
+}
+
+export async function createShipment(payload: CreateShipmentPayload, token?: string) {
+  return httpClient<Shipment>('/logistics/shipments', {
+    method: 'POST',
+    token,
+    body: payload,
+  });
+}
+
+export async function getMyShipments(token: string, page = 1, limit = 20) {
+  return httpClient<PaginatedResponse<Shipment>>(
+    `/logistics/shipments?assignedVolunteerId=me&page=${page}&limit=${limit}`,
+    { token }
+  );
+}
+
+export async function updateShipmentStatus(
+  shipmentId: number,
+  status: Extract<ShipmentStatus, 'in_transit' | 'delivered'>,
+  token: string
+) {
+  return httpClient<Shipment>(`/logistics/shipments/${shipmentId}/status`, {
+    method: 'PATCH',
+    token,
+    body: { status },
   });
 }

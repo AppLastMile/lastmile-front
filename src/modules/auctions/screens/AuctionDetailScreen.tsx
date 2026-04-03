@@ -21,12 +21,14 @@ import {
   placeBid,
   startAuction,
 } from '@/services/api/auctionsService';
+import { getUser, getUsers, type UserSummary } from '@/services/api/usersService';
 import {
   connectRealtime,
   joinRealtimeRoom,
   leaveRealtimeRoom,
   onRealtime,
 } from '@/services/realtime/realtimeService';
+import { addNotification } from '@/modules/notifications/state/notificationsStore';
 
 type BidPlacedEvent = {
   bidId: number;
@@ -41,6 +43,23 @@ type AuctionClosedEvent = {
   winnerId: number | null;
   winningAmount: number;
   currency: string;
+};
+
+type AuctionStartedEvent = {
+  auctionId: number;
+  startedAt?: string | null;
+  endAt?: string | null;
+  status?: AuctionStatus;
+  currentPrice?: number;
+};
+
+type AuctionLifecycleEvent = {
+  auctionId: number;
+  status?: AuctionStatus;
+  startedAt?: string | null;
+  endAt?: string | null;
+  currentPrice?: number | null;
+  winnerId?: number | null;
 };
 
 const STATUS_LABEL: Record<AuctionStatus, string> = {
@@ -66,6 +85,24 @@ const STATUS_FG: Record<AuctionStatus, string> = {
   sold: '#92400e',
   cancelled: '#991b1b',
 };
+
+function getRoleLabel(role: string): string {
+  const roleMap: Record<string, string> = {
+    volunteer: 'Voluntario',
+    organizer: 'Organizador',
+    donor: 'Donante',
+  };
+  return roleMap[role] || role;
+}
+
+function getUserDisplayLabel(user: UserSummary | null | undefined) {
+  if (user) {
+    const name = user.name || user.fullName || `#${user.id}`;
+    return `${getRoleLabel(user.role)} (${name})`;
+  }
+
+  return 'Pujador';
+}
 
 function getErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return 'Error desconocido.';
@@ -96,6 +133,59 @@ function formatCountdown(seconds: number): string {
 function formatPrice(price: number | null, currency: string): string {
   if (price === null) return '–';
   return `${currency} ${price.toLocaleString('es-CO')}`;
+}
+
+function normalizeId(value: unknown): number | null {
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function resolveWinnerId(auction: Auction | null, bids: AuctionBid[]): number | null {
+  if (!auction) return null;
+
+  const auctionWinnerId = normalizeId(auction.winnerId);
+  if (auctionWinnerId !== null) {
+    return auctionWinnerId;
+  }
+
+  if (auction.status !== 'closed' && auction.status !== 'sold') {
+    return null;
+  }
+
+  const currentFinalPrice = auction.currentPrice ?? auction.initialPrice;
+  const exactWinningBid = bids.find((bid) => bid.amount === currentFinalPrice);
+  if (exactWinningBid) {
+    return normalizeId(exactWinningBid.userId);
+  }
+
+  const highestBid = bids.reduce<AuctionBid | null>((best, bid) => {
+    if (!best) return bid;
+    return bid.amount > best.amount ? bid : best;
+  }, null);
+
+  return normalizeId(highestBid?.userId ?? null);
+}
+
+function normalizeBids(bids: AuctionBid[]): AuctionBid[] {
+  return [...bids]
+    .map((bid) => ({
+      ...bid,
+      auctionId: Number(bid.auctionId),
+      userId: Number(bid.userId),
+      amount: Number(bid.amount),
+    }))
+    .sort((left, right) => right.amount - left.amount || right.id - left.id);
+}
+
+function getWinningBid(auction: Auction | null, bids: AuctionBid[]): AuctionBid | null {
+  if (!auction) return null;
+
+  const normalizedBids = normalizeBids(bids);
+  if (normalizedBids.length === 0) return null;
+
+  const currentFinalPrice = Number(auction.currentPrice ?? auction.initialPrice);
+  const exactMatch = normalizedBids.find((bid) => bid.amount === currentFinalPrice);
+  return exactMatch ?? normalizedBids[0] ?? null;
 }
 
 function InfoRow({
@@ -143,7 +233,9 @@ export function AuctionDetailScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [bids, setBids] = useState<AuctionBid[]>([]);
-  const [isBidsLoading, setIsBidsLoading] = useState(false);
+  const [usersById, setUsersById] = useState<Record<number, UserSummary>>({});
+
+  const [winner, setWinner] = useState<UserSummary | null>(null);
 
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -155,12 +247,80 @@ export function AuctionDetailScreen() {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const closedRef = useRef(false);
 
+  const loadUserDirectory = useCallback(async () => {
+    try {
+      const firstPage = await getUsers(1, 100, currentUser?.accessToken);
+      const allUsers = [...firstPage.data];
+
+      const totalPages = firstPage.meta.totalPages;
+      if (totalPages > 1) {
+        const remainingPages = await Promise.all(
+          Array.from({ length: totalPages - 1 }, async (_, index) => {
+            const page = index + 2;
+            const response = await getUsers(page, 100, currentUser?.accessToken);
+            return response.data;
+          })
+        );
+
+        remainingPages.forEach((pageUsers) => {
+          allUsers.push(...pageUsers);
+        });
+      }
+
+      const directory = allUsers.reduce<Record<number, UserSummary>>((accumulator, user) => {
+        accumulator[user.id] = user;
+        return accumulator;
+      }, {});
+
+      setUsersById(directory);
+    } catch {
+      // Ignore if full directory cannot be loaded
+    }
+  }, [currentUser?.accessToken]);
+
   const loadAuction = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
+    setWinner(null);
     try {
       const data = await getAuction(auctionId);
-      setAuction(data);
+
+      // Always load bids to check if current user participated
+      let bidData: AuctionBid[] = [];
+      try {
+        bidData = normalizeBids(await getAuctionBids(auctionId, currentUser?.accessToken));
+        setBids(bidData);
+        await loadUserDirectory();
+      } catch {
+        // silently fail if can't load bids
+      }
+
+      const winnerId = resolveWinnerId(data, bidData);
+
+      setAuction({
+        ...data,
+        winnerId,
+      });
+
+      // Load winner info if exists
+      if (winnerId !== null) {
+        try {
+          const winnerData = await getUser(winnerId, currentUser?.accessToken);
+          setWinner(winnerData);
+        } catch {
+          // silently fail if can't load winner
+        }
+      } else if (getWinningBid(data, bidData)) {
+        try {
+          const winnerData = await getUser(
+            getWinningBid(data, bidData)!.userId,
+            currentUser?.accessToken
+          );
+          setWinner(winnerData);
+        } catch {
+          // silently fail if can't load winner
+        }
+      }
     } catch (error) {
       setLoadError(`No se pudo cargar la subasta. ${getErrorMessage(error)}`);
     } finally {
@@ -168,27 +328,13 @@ export function AuctionDetailScreen() {
     }
   }, [auctionId]);
 
-  const loadBids = useCallback(async () => {
-    setIsBidsLoading(true);
-    try {
-      const data = await getAuctionBids(auctionId);
-      setBids(data);
-    } catch {
-      // silently keep previous bids
-    } finally {
-      setIsBidsLoading(false);
-    }
-  }, [auctionId]);
-
   useEffect(() => {
     loadAuction();
   }, [loadAuction]);
 
-  // Connect to socket and load bids when auction is active
+  // Connect to socket and listen to real-time updates for this auction
   useEffect(() => {
-    if (auction?.status !== 'active') return;
-
-    loadBids();
+    if (!auction) return;
 
     if (currentUser) {
       connectRealtime({ userId: currentUser.id, role: currentUser.role });
@@ -208,10 +354,63 @@ export function AuctionDetailScreen() {
         createdAt: new Date().toISOString(),
       };
 
-      setBids((prev) => [newBid, ...prev]);
+      setBids((prev) => normalizeBids([newBid, ...prev]));
+      if (!usersById[event.userId]) {
+        loadUserDirectory();
+      }
       setAuction((prev) =>
         prev ? { ...prev, currentPrice: event.amount } : prev
       );
+    });
+
+    const onAuctionStarted = (event: AuctionStartedEvent) => {
+      if (event.auctionId !== auctionId) return;
+
+      setAuction((prev) => {
+        if (!prev) return prev;
+
+        const startedAt = event.startedAt ?? new Date().toISOString();
+        const endAt =
+          event.endAt ??
+          prev.endAt ??
+          new Date(new Date(startedAt).getTime() + prev.durationMinutes * 60000).toISOString();
+
+        return {
+          ...prev,
+          status: event.status ?? 'active',
+          startedAt,
+          endAt,
+          currentPrice: event.currentPrice ?? prev.currentPrice,
+        };
+      });
+    };
+
+    const offAuctionStarted = onRealtime<AuctionStartedEvent>('auction.started', onAuctionStarted);
+    const offAuctionStart = onRealtime<AuctionStartedEvent>('auction.start', onAuctionStarted);
+    const offAuctionUpdated = onRealtime<AuctionStartedEvent>('auction.updated', onAuctionStarted);
+
+    const onLifecycleUpdate = (event: AuctionLifecycleEvent) => {
+      if (event.auctionId !== auctionId) return;
+
+      setAuction((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status: event.status ?? prev.status,
+          startedAt: event.startedAt ?? prev.startedAt,
+          endAt: event.endAt ?? prev.endAt,
+          currentPrice: event.currentPrice ?? prev.currentPrice,
+          winnerId: event.winnerId ?? prev.winnerId,
+        };
+      });
+    };
+
+    const offAuctionStatusChanged = onRealtime<AuctionLifecycleEvent>('auction.status.changed', onLifecycleUpdate);
+    const offAuctionSold = onRealtime<AuctionLifecycleEvent>('auction.sold', (event) => {
+      onLifecycleUpdate({ ...event, status: event.status ?? 'sold' });
+    });
+    const offAuctionCancelled = onRealtime<AuctionLifecycleEvent>('auction.cancelled', (event) => {
+      onLifecycleUpdate({ ...event, status: event.status ?? 'cancelled' });
     });
 
     const offAuctionClosed = onRealtime<AuctionClosedEvent>('auction.closed', (event) => {
@@ -228,14 +427,93 @@ export function AuctionDetailScreen() {
             }
           : prev
       );
+
+      // Load winner info if exists
+      const winnerId = normalizeId(event.winnerId);
+
+      if (winnerId !== null) {
+        getUser(winnerId, currentUser?.accessToken)
+          .then((userData) => {
+            setWinner(userData);
+            
+            // Send notification to current user
+            if (currentUser) {
+              const isWinner = Number(currentUser.id) === winnerId;
+              const winnerName = userData.name || userData.fullName || `Usuario #${winnerId}`;
+              const notificationMessage = isWinner
+                ? `¡Ganaste la subasta! Precio final: ${event.currency} ${event.winningAmount.toLocaleString('es-CO')}`
+                : `La subasta finalizó. Ganador: ${winnerName}`;
+              
+              addNotification({
+                notificationId: event.auctionId,
+                userId: currentUser.id,
+                message: notificationMessage,
+                auctionId: event.auctionId,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          })
+          .catch(() => {
+            // Still send notification even if can't load winner
+            if (currentUser) {
+              const isWinner = Number(currentUser.id) === winnerId;
+              const notificationMessage = isWinner
+                ? `¡Ganaste la subasta! Precio final: ${event.currency} ${event.winningAmount.toLocaleString('es-CO')}`
+                : `La subasta finalizó. Ganador: Usuario #${winnerId}`;
+              
+              addNotification({
+                notificationId: event.auctionId,
+                userId: currentUser.id,
+                message: notificationMessage,
+                auctionId: event.auctionId,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          });
+      }
+      
+      if (winnerId === null && currentUser) {
+        // No winner
+        addNotification({
+          notificationId: event.auctionId,
+          userId: currentUser.id,
+          message: 'La subasta finalizó sin ganador',
+          auctionId: event.auctionId,
+          createdAt: new Date().toISOString(),
+        });
+      }
     });
 
     return () => {
       offBidPlaced();
+      offAuctionStarted();
+      offAuctionStart();
+      offAuctionUpdated();
+      offAuctionStatusChanged();
+      offAuctionSold();
+      offAuctionCancelled();
       offAuctionClosed();
       leaveRealtimeRoom(room);
     };
-  }, [auction?.status, auctionId, currentUser, loadBids]);
+  }, [auction, auctionId, currentUser]);
+
+  // Fallback: while auction is created, poll status changes in case backend does not emit started events.
+  useEffect(() => {
+    if (auction?.status !== 'created') {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const latest = await getAuction(auctionId);
+        setAuction((prev) => (prev ? { ...prev, ...latest } : latest));
+      } catch {
+        // silent fallback polling
+      }
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [auction, auctionId]);
 
   // Countdown timer — runs only while auction is active and endAt is set
   useEffect(() => {
@@ -293,9 +571,9 @@ export function AuctionDetailScreen() {
       return;
     }
 
-    const amount = parseFloat(bidAmount);
+    const amount = Number.parseFloat(bidAmount);
 
-    if (isNaN(amount) || amount <= 0) {
+    if (Number.isNaN(amount) || amount <= 0) {
       setBidError('Ingresa un monto válido mayor a 0.');
       return;
     }
@@ -482,7 +760,7 @@ export function AuctionDetailScreen() {
               />
               <InfoRow label='Moneda' value={auction.currency} />
               <InfoRow label='Duración' value={`${auction.durationMinutes} minutos`} />
-              <InfoRow label='Vendedor' value={`#${auction.sellerId}`} />
+              <InfoRow label='Vendedor' value={`Organizador #${auction.sellerId}`} />
               <InfoRow
                 label='Modo de puja'
                 value={
@@ -506,7 +784,7 @@ export function AuctionDetailScreen() {
             </View>
 
             {/* ── Start auction (CREATED) ── */}
-            {auction.status === 'created' ? (
+            {auction.status === 'created' && currentUser?.role === 'organizer' ? (
               <View style={{ marginTop: 16 }}>
                 {startError ? (
                   <View
@@ -553,7 +831,7 @@ export function AuctionDetailScreen() {
             ) : null}
 
             {/* ── Active: place bid + live bids ── */}
-            {auction.status === 'active' ? (
+            {auction.status === 'active' && currentUser?.role !== 'organizer' ? (
               <View style={{ marginTop: 16, gap: 14 }}>
                 {/* Place bid */}
                 <View style={cardStyle}>
@@ -709,9 +987,7 @@ export function AuctionDetailScreen() {
                       Ofertas en tiempo real
                     </Text>
                   </View>
-                  {isBidsLoading ? (
-                    <ActivityIndicator color='#1e73fa' size='small' />
-                  ) : bids.length === 0 ? (
+                  {bids.length === 0 ? (
                     <Text style={{ fontSize: 13, color: '#9ca3af' }}>
                       Aun no hay ofertas registradas.
                     </Text>
@@ -740,7 +1016,7 @@ export function AuctionDetailScreen() {
                             <FontAwesome5 color='#1e73fa' name='user' size={12} />
                           </View>
                           <Text style={{ fontSize: 13, color: '#374151' }}>
-                            Usuario #{bid.userId}
+                            {getUserDisplayLabel(usersById[bid.userId])}
                           </Text>
                         </View>
                         <Text
@@ -756,46 +1032,114 @@ export function AuctionDetailScreen() {
             ) : null}
 
             {/* ── Closed / Sold: winner ── */}
-            {auction.status === 'closed' || auction.status === 'sold' ? (
-              <View style={{ ...cardStyle, marginTop: 16 }}>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginBottom: 14,
-                  }}
-                >
-                  <FontAwesome5
-                    color='#92400e'
-                    name='trophy'
-                    size={18}
-                    style={{ marginRight: 10 }}
-                  />
-                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#111f3c' }}>
-                    Resultado final
-                  </Text>
-                </View>
-                {auction.winnerId ? (
-                  <InfoRow highlight label='Ganador' value={`Usuario #${auction.winnerId}`} />
-                ) : (
-                  <InfoRow label='Ganador' value='Sin ganador registrado' />
-                )}
-                <InfoRow
-                  highlight
-                  label='Precio final'
-                  value={formatPrice(
-                    auction.currentPrice ?? auction.initialPrice,
-                    auction.currency
+            {auction.status === 'closed' || auction.status === 'sold' ? (() => {
+              const winningBid = getWinningBid(auction, bids);
+              const resolvedWinnerId = winningBid ? normalizeId(winningBid.userId) : resolveWinnerId(auction, bids);
+              const userWon = resolvedWinnerId !== null && Number(currentUser?.id) === resolvedWinnerId;
+              const userParticipated = bids.some((bid) => bid.userId === currentUser?.id);
+
+              return (
+                <View style={{ ...cardStyle, marginTop: 16 }}>
+                  {/* Winner banner */}
+                  {userWon && (
+                    <View
+                      style={{
+                        backgroundColor: '#d1fae5',
+                        borderRadius: 12,
+                        padding: 14,
+                        marginBottom: 14,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <FontAwesome5
+                        color='#065f46'
+                        name='trophy'
+                        size={24}
+                        style={{ marginBottom: 8 }}
+                      />
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#065f46' }}>
+                        ¡Ganaste esta subasta!
+                      </Text>
+                      <Text style={{ fontSize: 13, color: '#047857', marginTop: 4 }}>
+                        Felicidades por tu victoria
+                      </Text>
+                    </View>
                   )}
-                />
-                {auction.soldAt ? (
+
+                  {!userWon && userParticipated && (
+                    <View
+                      style={{
+                        backgroundColor: '#fee2e2',
+                        borderRadius: 12,
+                        padding: 14,
+                        marginBottom: 14,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <FontAwesome5
+                        color='#991b1b'
+                        name='medal'
+                        size={24}
+                        style={{ marginBottom: 8 }}
+                      />
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#991b1b' }}>
+                        No ganaste esta subasta
+                      </Text>
+                      <Text style={{ fontSize: 13, color: '#dc2626', marginTop: 4 }}>
+                        Pero participaste en la puja. ¡Intenta en la próxima!
+                      </Text>
+                    </View>
+                  )}
+
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginBottom: 14,
+                    }}
+                  >
+                    <FontAwesome5
+                      color='#92400e'
+                      name='trophy'
+                      size={18}
+                      style={{ marginRight: 10 }}
+                    />
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: '#111f3c' }}>
+                      Resultado final
+                    </Text>
+                  </View>
+                  {resolvedWinnerId === null ? (
+                    <InfoRow label='Ganador' value='Sin ganador registrado' />
+                  ) : (() => {
+                    const winnerName = winner?.name || winner?.fullName || `#${winner?.id}`;
+                    const winnerDisplayText = winner
+                      ? `${getRoleLabel(winner.role)} (${winnerName})`
+                      : `Usuario #${resolvedWinnerId}`;
+                    return (
+                      <InfoRow
+                        highlight
+                        label='Ganador'
+                        value={winnerDisplayText}
+                      />
+                    );
+                  })()}
                   <InfoRow
-                    label='Vendida el'
-                    value={new Date(auction.soldAt).toLocaleString('es-CO')}
+                    highlight
+                    label='Precio final'
+                    value={formatPrice(
+                      auction.currentPrice ?? auction.initialPrice,
+                      auction.currency
+                    )}
                   />
-                ) : null}
-              </View>
-            ) : null}
+                  {auction.soldAt ? (
+                    <InfoRow
+                      label='Vendida el'
+                      value={new Date(auction.soldAt).toLocaleString('es-CO')}
+                    />
+                  ) : null}
+                </View>
+              );
+            })() : null}
           </>
         ) : null}
       </ScrollView>

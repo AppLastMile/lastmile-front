@@ -1,9 +1,11 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3001';
+const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const EXPO_PUBLIC_API_URL = process.env.EXPO_PUBLIC_API_URL;
 const EXPO_PUBLIC_NETWORK_DEBUG = process.env.EXPO_PUBLIC_NETWORK_DEBUG;
+const BACKEND_CONNECTION_ERROR_MESSAGE =
+  'No fue posible conectar con el backend. Intenta de nuevo más tarde.';
 
 let hasLoggedApiBaseUrl = false;
 
@@ -22,6 +24,20 @@ function logNetworkDebug(message: string, payload?: unknown) {
 
   // eslint-disable-next-line no-console
   console.log(`[network] ${message}`, payload ?? '');
+}
+
+function isHtmlPayload(payload: string) {
+  const normalized = payload.trim().toLowerCase();
+  return normalized.startsWith('<!doctype html') || normalized.startsWith('<html');
+}
+
+function isGatewayLikeMessage(payload: string) {
+  const normalized = payload.trim().toLowerCase();
+  return (
+    normalized === 'bad gateway' ||
+    normalized === 'gateway timeout' ||
+    normalized === 'service unavailable'
+  );
 }
 
 function getExpoHostIp() {
@@ -115,13 +131,22 @@ export async function httpClient<T>(
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-  } catch (error) {
-    throw new Error(`Network request failed (${Platform.OS}) -> ${requestUrl}`);
+  } catch {
+    throw new Error(BACKEND_CONNECTION_ERROR_MESSAGE);
   }
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Unexpected API error (${response.status}) -> ${requestUrl}`);
+    const message = (await response.text()).trim();
+
+    if (!message) {
+      throw new Error(`Unexpected API error (${response.status}) -> ${requestUrl}`);
+    }
+
+    if (isHtmlPayload(message) || (response.status >= 500 && isGatewayLikeMessage(message))) {
+      throw new Error(BACKEND_CONNECTION_ERROR_MESSAGE);
+    }
+
+    throw new Error(message);
   }
 
   return response.json() as Promise<T>;

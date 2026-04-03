@@ -174,7 +174,22 @@ describe('httpClient', () => {
     const httpClient = loadHttpClient({ os: 'web', apiUrl: 'http://api.example.com/v1' });
 
     await expect(httpClient('/offline')).rejects.toThrow(
-      'Network request failed (web) -> http://api.example.com/v1/offline'
+      'No fue posible conectar con el backend. Intenta de nuevo más tarde.'
+    );
+  });
+
+  it('throws friendly backend connection error when server returns html', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      text: async () => '<!DOCTYPE html><html><body>Bad Gateway</body></html>',
+    });
+    (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as never;
+
+    const httpClient = loadHttpClient({ os: 'ios', apiUrl: 'http://api.example.com/v1' });
+
+    await expect(httpClient('/gateway')).rejects.toThrow(
+      'No fue posible conectar con el backend. Intenta de nuevo más tarde.'
     );
   });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesome5 } from '@expo/vector-icons';
 import {
   ActivityIndicator,
@@ -20,6 +20,7 @@ import {
   buildInventoryMap,
   ChatMessage,
   ChatMessageCreatedEvent,
+  CampaignFundsRealtimeEvent,
   formatMoney,
   getErrorMessage,
   InventoryRealtimeEvent,
@@ -28,6 +29,7 @@ import {
 } from '@/modules/campaigns/utils/campaignsShared';
 import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
 import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
+import { addNotification } from '@/modules/notifications/state/notificationsStore';
 import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 import { type Campaign, createCampaign, getCampaigns } from '@/services/api/campaignsService';
 import { getItemDonations, type ItemDonationResponse } from '@/services/api/donationsService';
@@ -68,6 +70,75 @@ export function OrganizerCampaignsScreen() {
   const [chatCampaignId, setChatCampaignId] = useState<number | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [chatByCampaign, setChatByCampaign] = useState<Record<number, ChatMessage[]>>({});
+  const hasCampaignSnapshot = useRef(false);
+  const notifiedCreatedCampaignIds = useRef<Set<number>>(new Set());
+  const notifiedClosedCampaignIds = useRef<Set<number>>(new Set());
+
+  const getProgress = useCallback((campaign: Campaign) => {
+    if (!campaign.goalMoney || campaign.goalMoney <= 0) {
+      return 0;
+    }
+
+    return Math.min(100, Math.round((campaign.collectedMoney / campaign.goalMoney) * 100));
+  }, []);
+
+  const syncCampaigns = useCallback(
+    (nextCampaigns: Campaign[], notifyChanges = true) => {
+      setCampaigns((prevCampaigns) => {
+        if (!hasCampaignSnapshot.current) {
+          hasCampaignSnapshot.current = true;
+          return nextCampaigns;
+        }
+
+        if (!notifyChanges) {
+          return nextCampaigns;
+        }
+
+        const previousById = new Map(prevCampaigns.map((campaign) => [campaign.id, campaign]));
+
+        nextCampaigns.forEach((campaign) => {
+          const previous = previousById.get(campaign.id);
+
+          if (!previous) {
+            if (notifiedCreatedCampaignIds.current.has(campaign.id)) {
+              return;
+            }
+
+            notifiedCreatedCampaignIds.current.add(campaign.id);
+            addNotification({
+              notificationId: 3_000_000 + campaign.id,
+              userId: currentUser?.id ?? 0,
+              message: `Nueva campaña creada: ${campaign.name}`,
+              auctionId: null,
+              createdAt: new Date().toISOString(),
+            });
+            return;
+          }
+
+          const previousProgress = getProgress(previous);
+          const currentProgress = getProgress(campaign);
+
+          if (previousProgress < 100 && currentProgress >= 100) {
+            if (notifiedClosedCampaignIds.current.has(campaign.id)) {
+              return;
+            }
+
+            notifiedClosedCampaignIds.current.add(campaign.id);
+            addNotification({
+              notificationId: 4_000_000 + campaign.id,
+              userId: currentUser?.id ?? 0,
+              message: `Campaña cerrada por meta alcanzada: ${campaign.name}`,
+              auctionId: null,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        });
+
+        return nextCampaigns;
+      });
+    },
+    [currentUser?.id, getProgress]
+  );
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -92,10 +163,10 @@ export function OrganizerCampaignsScreen() {
     }
 
     if (campaignsResult.status === 'fulfilled') {
-      setCampaigns(campaignsResult.value.data);
+      syncCampaigns(campaignsResult.value.data, false);
     } else {
       failedSources.push(`campanas (${getErrorMessage(campaignsResult.reason)})`);
-      setCampaigns([]);
+      syncCampaigns([], false);
     }
 
     if (usersResult.status === 'fulfilled') {
@@ -117,7 +188,7 @@ export function OrganizerCampaignsScreen() {
     }
 
     setIsLoading(false);
-  }, []);
+  }, [syncCampaigns]);
 
   useEffect(() => {
     loadData();
@@ -159,6 +230,16 @@ export function OrganizerCampaignsScreen() {
     role: currentUser?.role,
     token: currentUser?.accessToken,
   });
+
+  const refreshCampaigns = useCallback(async () => {
+    try {
+      const campaignsResult = await getCampaigns();
+
+      syncCampaigns(campaignsResult.data, true);
+    } catch {
+      // Keep the last visible snapshot when the refresh fails.
+    }
+  }, [syncCampaigns]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -258,12 +339,62 @@ export function OrganizerCampaignsScreen() {
       }
     });
 
+    const offCampaignFundsUpdated = onRealtime<CampaignFundsRealtimeEvent>(
+      'campaign.money.updated',
+      async (event) => {
+        if (!event?.campaignId) {
+          return;
+        }
+
+        await refreshCampaigns();
+      }
+    );
+
+    const offDonationCreated = onRealtime<CampaignFundsRealtimeEvent>('donation.money.created', async (event) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      await refreshCampaigns();
+    });
+
+    const offCampaignUpdated = onRealtime<CampaignFundsRealtimeEvent>('campaign.updated', async (event) => {
+      if (!event?.campaignId) {
+        return;
+      }
+
+      await refreshCampaigns();
+    });
+
+    const offCampaignCreated = onRealtime<CampaignFundsRealtimeEvent>('campaign.created', async () => {
+      await refreshCampaigns();
+    });
+
+    const offCampaignNew = onRealtime<CampaignFundsRealtimeEvent>('campaign.new', async () => {
+      await refreshCampaigns();
+    });
+
+    const offCampaignClosed = onRealtime<CampaignFundsRealtimeEvent>('campaign.closed', async () => {
+      await refreshCampaigns();
+    });
+
+    const refreshTimer = setInterval(() => {
+      void refreshCampaigns();
+    }, 15000);
+
     return () => {
       offChatMessageCreated();
       offInventoryUpdated();
+      offCampaignFundsUpdated();
+      offDonationCreated();
+      offCampaignUpdated();
+      offCampaignCreated();
+      offCampaignNew();
+      offCampaignClosed();
+      clearInterval(refreshTimer);
       rooms.forEach((room) => leaveRealtimeRoom(room));
     };
-  }, [campaigns, currentUser, organizerBuyerId]);
+  }, [campaigns, currentUser, organizerBuyerId, refreshCampaigns]);
 
   const canCreate = campaignName.trim().length >= 3 && Boolean(selectedEventId) && !isSubmitting;
 
@@ -300,6 +431,7 @@ export function OrganizerCampaignsScreen() {
       });
 
       setCampaigns((prev) => [createdCampaign, ...prev]);
+      void refreshCampaigns();
       setCampaignName('');
       setCampaignDescription('');
       setGoalMoney('0');
@@ -381,9 +513,6 @@ export function OrganizerCampaignsScreen() {
 
         <View className='mt-3 flex-row items-center justify-between'>
           <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
-          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2 active:opacity-90' onPress={loadData}>
-            <Text className='font-semibold text-white'>Recargar</Text>
-          </Pressable>
         </View>
 
         <Pressable
@@ -398,7 +527,7 @@ export function OrganizerCampaignsScreen() {
           }}
         >
           <Text className='text-center text-base font-extrabold tracking-[0.3px] text-white'>
-            Crear campana
+            Crear campaña
           </Text>
         </Pressable>
 
@@ -427,6 +556,7 @@ export function OrganizerCampaignsScreen() {
               campaignItem.goalMoney > 0
                 ? Math.min(100, Math.round((campaignItem.collectedMoney / campaignItem.goalMoney) * 100))
                 : 0;
+            const isClosed = progress >= 100;
 
             const inventory = inventoryByCampaign[campaignItem.id] ?? {};
             const physicalInventorySummary = PHYSICAL_DONATION_OPTIONS.map((option) => ({
@@ -436,11 +566,28 @@ export function OrganizerCampaignsScreen() {
 
             return (
               <Animated.View
-                className='rounded-2xl border border-[#d8e6ff] bg-white p-4'
+                className='relative overflow-hidden rounded-2xl border border-[#d8e6ff] bg-white p-4'
                 entering={FadeInUp.delay(index * 45).duration(240)}
                 key={campaignItem.id}
               >
-                <View className='flex-row items-start justify-between'>
+                {isClosed ? (
+                  <View className='absolute inset-0 z-10 items-center justify-center bg-[#6b7280cc] px-4'>
+                    <View className='w-full rounded-2xl border border-white/20 bg-white px-4 py-4 shadow-lg'>
+                      <Text className='text-center text-[11px] font-bold uppercase tracking-[1.6px] text-[#0f7a46]'>
+                        Campaña cerrada
+                      </Text>
+                      <Text className='mt-1 text-center text-lg font-extrabold text-[#16325d]'>
+                        Meta alcanzada
+                      </Text>
+                      <Text className='mt-2 text-center text-sm text-[#4d648a]'>
+                        Esta campaña llegó al $100\%$ de su objetivo y quedó cerrada para nuevos aportes.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <View className={isClosed ? 'opacity-30' : ''}>
+                  <View className='flex-row items-start justify-between'>
                   <View className='flex-1 pr-3'>
                     <Text className='text-base font-extrabold text-[#1b3259]'>{campaignItem.name}</Text>
                     <Text className='mt-1 text-xs text-[#5d7399]'>
@@ -454,36 +601,47 @@ export function OrganizerCampaignsScreen() {
                   >
                     <Text className='text-[10px] font-bold text-white'>Chat</Text>
                   </Pressable>
-                </View>
-
-                <View className='mt-3 flex-row gap-2'>
-                  <View className='flex-1 rounded-xl bg-[#edf3ff] p-3'>
-                    <Text className='text-xs font-semibold text-[#4b648d]'>Fondos</Text>
-                    <Text className='mt-1 text-sm font-extrabold text-[#1f4fa7]'>
-                      {formatMoney(campaignItem.collectedMoney)}
-                    </Text>
                   </View>
-                  <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
-                    <Text className='text-xs font-semibold text-[#4b648d]'>Meta</Text>
-                    <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
-                      {formatMoney(campaignItem.goalMoney)}
-                    </Text>
+
+                  <View className='mt-3 flex-row gap-2'>
+                    <View className='flex-1 rounded-xl bg-[#edf3ff] p-3'>
+                      <Text className='text-xs font-semibold text-[#4b648d]'>Fondos</Text>
+                      <Text className='mt-1 text-sm font-extrabold text-[#1f4fa7]'>
+                        {formatMoney(campaignItem.collectedMoney)}
+                      </Text>
+                    </View>
+                    <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
+                      <Text className='text-xs font-semibold text-[#4b648d]'>Meta</Text>
+                      <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
+                        {formatMoney(campaignItem.goalMoney)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
 
-                <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
-                  <View className='h-full rounded-full bg-[#1f5fe0]' style={{ width: `${Math.max(6, progress)}%` }} />
-                </View>
+                  <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
+                    <View className='h-full rounded-full bg-[#1f5fe0]' style={{ width: `${Math.max(6, progress)}%` }} />
+                  </View>
 
-                <View className='mt-3 rounded-xl bg-[#edf3ff] p-3'>
-                  <Text className='text-xs font-semibold text-[#27436d]'>Elementos donados</Text>
-                  {physicalInventorySummary.length === 0 ? (
-                    <Text className='mt-1 text-xs text-[#5d7399]'>Aun no hay elementos donados.</Text>
+                  {isClosed ? (
+                    <Text className='mt-3 text-xs font-semibold text-[#4b648d]'>
+                      El estado se marcó automáticamente al alcanzar la meta.
+                    </Text>
                   ) : (
-                    <Text className='mt-1 text-xs text-[#1f365d]'>
-                      {physicalInventorySummary.map((entry) => `${entry.label}: ${entry.quantity}`).join(' | ')}
+                    <Text className='mt-3 text-xs font-semibold text-[#4b648d]'>
+                      Aún está activa y sigue recibiendo apoyo.
                     </Text>
                   )}
+
+                  <View className='mt-3 rounded-xl bg-[#edf3ff] p-3'>
+                    <Text className='text-xs font-semibold text-[#27436d]'>Elementos donados</Text>
+                    {physicalInventorySummary.length === 0 ? (
+                      <Text className='mt-1 text-xs text-[#5d7399]'>Aun no hay elementos donados.</Text>
+                    ) : (
+                      <Text className='mt-1 text-xs text-[#1f365d]'>
+                        {physicalInventorySummary.map((entry) => `${entry.label}: ${entry.quantity}`).join(' | ')}
+                      </Text>
+                    )}
+                  </View>
                 </View>
               </Animated.View>
             );
@@ -504,7 +662,7 @@ export function OrganizerCampaignsScreen() {
                 keyboardShouldPersistTaps='handled'
                 showsVerticalScrollIndicator={false}
               >
-                <Text className='text-lg font-extrabold text-[#17315c]'>Crear campana</Text>
+                <Text className='text-lg font-extrabold text-[#17315c]'>Crear campaña</Text>
 
                 <Text className='mt-4 text-sm font-semibold text-[#27436d]'>Nombre</Text>
                 <TextInput

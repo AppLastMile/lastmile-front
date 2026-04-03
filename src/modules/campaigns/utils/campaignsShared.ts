@@ -33,6 +33,11 @@ export type InventoryRealtimeEvent = {
   campaignId: number;
 };
 
+export type CampaignFundsRealtimeEvent = {
+  campaignId: number;
+  amount?: number;
+};
+
 export const PHYSICAL_DONATION_OPTIONS: PhysicalDonationOption[] = [
   { key: 'cama', label: 'Camas' },
   { key: 'colchon', label: 'Colchones' },

@@ -217,9 +217,28 @@ export function CreateMissionScreen() {
     setIsLoadingEvents(false);
   }, []);
 
+  const refreshEventsSilently = useCallback(async () => {
+    try {
+      const response = await getEvents({ page: 1, limit: 100 });
+      setEvents(response.data);
+    } catch {
+      // Keep previous events when a background refresh fails.
+    }
+  }, []);
+
   useEffect(() => {
     loadMapData();
   }, [loadMapData]);
+
+  useEffect(() => {
+    const refreshId = setInterval(() => {
+      void refreshEventsSilently();
+    }, 3000);
+
+    return () => {
+      clearInterval(refreshId);
+    };
+  }, [refreshEventsSilently]);
 
   useFocusEffect(
     useCallback(() => {
@@ -239,6 +258,20 @@ export function CreateMissionScreen() {
       };
     }, [])
   );
+
+  useEffect(() => {
+    if (!createdEventLabel) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setCreatedEventLabel('');
+    }, 4000);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [createdEventLabel]);
 
   useEffect(() => {
     let isMounted = true;
@@ -331,6 +364,13 @@ export function CreateMissionScreen() {
       return;
     }
 
+    const trimmedDescription = eventDescription.trim();
+
+    if (trimmedDescription.length > 0 && trimmedDescription.length < 10) {
+      setSubmitError('La descripción del evento debe tener al menos 10 caracteres.');
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -339,7 +379,7 @@ export function CreateMissionScreen() {
         name: eventName.trim(),
         disasterType: disasterType.trim(),
         city: selectedCity.name,
-        description: eventDescription.trim() || 'Evento registrado desde aplicacion movil',
+        description: trimmedDescription || 'Evento registrado desde aplicacion movil',
         date: new Date().toISOString(),
         createdBy: DEFAULT_CREATED_BY,
       });
@@ -467,7 +507,7 @@ export function CreateMissionScreen() {
           <View className='h-6 w-6 items-center justify-center rounded-full bg-[#e7efff]'>
             <FontAwesome5 color='#1f5fe0' name='crosshairs' size={11} />
           </View>
-          <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicacion</Text>
+          <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicación</Text>
         </Pressable>
       </View>
 
@@ -479,9 +519,14 @@ export function CreateMissionScreen() {
 
       {createdEventLabel ? (
         <Animated.View
-          className='absolute left-5 right-5 top-24 rounded-xl bg-[#183e80] px-4 py-3'
+          className='absolute left-4 right-4 rounded-xl bg-[#183e80] px-4 py-3'
           entering={FadeInUp.duration(350)}
           layout={Layout.springify()}
+          style={{
+            top: controlsTop + 78,
+            zIndex: 65,
+            elevation: 65,
+          }}
         >
           <Text className='text-sm font-semibold text-white'>Evento creado: {createdEventLabel}</Text>
         </Animated.View>
@@ -506,19 +551,15 @@ export function CreateMissionScreen() {
           >
             <Pressable
               className='flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
-              onPress={() => setIsCreateEventOpen((current) => !current)}
+              onPress={() => {
+                setIsCreateEventOpen(true);
+                setIsEventMenuOpen(false);
+              }}
             >
               <MaterialIcons color='#2f68d8' name='warning-amber' size={20} />
               <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>
                 Crear Evento (Desastre)
               </Text>
-            </Pressable>
-            <Pressable
-              className='mt-2 flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
-              onPress={loadMapData}
-            >
-              <MaterialIcons color='#2f68d8' name='refresh' size={20} />
-              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Recargar mapa</Text>
             </Pressable>
           </Animated.View>
         ) : null}

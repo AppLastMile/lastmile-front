@@ -168,9 +168,28 @@ export function CreateMissionScreen() {
     setIsLoadingEvents(false);
   }, []);
 
+  const refreshEventsSilently = useCallback(async () => {
+    try {
+      const response = await getEvents({ page: 1, limit: 100 });
+      setEvents(response.data);
+    } catch {
+      // Keep previous events when a background refresh fails.
+    }
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const refreshId = setInterval(() => {
+      void refreshEventsSilently();
+    }, 3000);
+
+    return () => {
+      clearInterval(refreshId);
+    };
+  }, [refreshEventsSilently]);
 
   useFocusEffect(
     useCallback(() => {
@@ -178,8 +197,29 @@ export function CreateMissionScreen() {
     }, [loadData])
   );
 
+  useEffect(() => {
+    if (!createdEventLabel) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setCreatedEventLabel('');
+    }, 4000);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [createdEventLabel]);
+
   const handleCreateEvent = async () => {
     if (!selectedCity) {
+      return;
+    }
+
+    const trimmedDescription = eventDescription.trim();
+
+    if (trimmedDescription.length > 0 && trimmedDescription.length < 10) {
+      setSubmitError('La descripción del evento debe tener al menos 10 caracteres.');
       return;
     }
 
@@ -191,7 +231,7 @@ export function CreateMissionScreen() {
         name: eventName.trim(),
         disasterType: disasterType.trim(),
         city: selectedCity.name,
-        description: eventDescription.trim() || 'Evento registrado desde la vista web',
+        description: trimmedDescription || 'Evento registrado desde la vista web',
         date: new Date().toISOString(),
         createdBy: DEFAULT_CREATED_BY,
       });
@@ -227,17 +267,16 @@ export function CreateMissionScreen() {
           >
             <MaterialIcons color='#fff' name='warning' size={22} />
           </Pressable>
-
-          <Pressable className='rounded-xl bg-[#1f5fe0] px-4 py-2' onPress={loadData}>
-            <Text className='font-semibold text-white'>Recargar inicio</Text>
-          </Pressable>
         </View>
 
         {isEventMenuOpen ? (
           <View className='mt-3 rounded-2xl border border-[#d8e7ff] bg-white p-3'>
             <Pressable
               className='flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
-              onPress={() => setIsCreateEventOpen((current) => !current)}
+              onPress={() => {
+                setIsCreateEventOpen(true);
+                setIsEventMenuOpen(false);
+              }}
             >
               <MaterialIcons color='#2f68d8' name='warning-amber' size={20} />
               <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Crear Evento (Desastre)</Text>

@@ -47,17 +47,23 @@ export function NotificationsBell({
 
       {toastMessage ? (
         <View
-          className='absolute right-0 top-12 rounded-xl bg-[#17345a] px-3 py-2'
+          className='absolute right-0 top-12 flex-row items-center rounded-xl bg-[#17345a] px-3 py-2'
+          pointerEvents='none'
           style={{
             shadowColor: '#0b1324',
             shadowOpacity: 0.2,
             shadowOffset: { width: 0, height: 6 },
             shadowRadius: 10,
-            elevation: 4,
-            maxWidth: 260,
+            maxWidth: 360,
+            minWidth: 240,
+            zIndex: 9999,
+            elevation: 9999,
           }}
         >
-          <Text className='text-xs font-medium text-white'>{toastMessage}</Text>
+          <FontAwesome5 color='#9dc2ff' name='bell' size={11} style={{ marginRight: 8 }} />
+          <Text className='flex-1 text-xs font-medium text-white' numberOfLines={1}>
+            {toastMessage}
+          </Text>
         </View>
       ) : null}
 
