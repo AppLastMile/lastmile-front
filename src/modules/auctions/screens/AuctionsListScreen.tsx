@@ -1,6 +1,6 @@
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
@@ -102,6 +103,8 @@ function formatPrice(price: number | null, currency: string): string {
 export function AuctionsListScreen() {
   const router = useRouter();
   const { currentUser } = useAuthSession();
+  const isWeb = Platform.OS === 'web';
+  const { width } = useWindowDimensions();
   const isOrganizer = currentUser?.role === 'organizer';
   const isDonor = currentUser?.role === 'donor';
   const organizerWebInset = isOrganizer && Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
@@ -121,6 +124,63 @@ export function AuctionsListScreen() {
   const [durationMinutes, setDurationMinutes] = useState('60');
   const [bidMode, setBidMode] = useState<AuctionBidMode>('free');
   const [bidIncrement, setBidIncrement] = useState('');
+
+  const webSummary = useMemo(() => {
+    const activeCount = auctions.filter((auction) => auction.status === 'active').length;
+    const closedCount = auctions.filter(
+      (auction) => auction.status === 'closed' || auction.status === 'sold'
+    ).length;
+    const totalRaised = auctions.reduce(
+      (acc, auction) => acc + (auction.currentPrice ?? auction.initialPrice),
+      0
+    );
+
+    return {
+      activeCount,
+      closedCount,
+      totalRaised,
+    };
+  }, [auctions]);
+
+  const webGridGap = 12;
+  const webContainerMaxWidth = 1760;
+  const webInnerHorizontalPadding = 12;
+
+  const webContentWidth = useMemo(() => {
+    if (!isWeb) {
+      return width;
+    }
+
+    return Math.max(980, width - organizerWebInset - 44);
+  }, [isWeb, organizerWebInset, width]);
+
+  const effectiveWebContentWidth = useMemo(() => {
+    if (!isWeb) {
+      return width;
+    }
+
+    return Math.min(webContainerMaxWidth, webContentWidth);
+  }, [isWeb, webContentWidth, width]);
+
+  const webAuctionColumns = useMemo(() => {
+    if (!isWeb) {
+      return 1;
+    }
+
+    return 3;
+  }, [isWeb]);
+
+  const auctionCardWidth = useMemo(() => {
+    if (!isWeb) {
+      return undefined;
+    }
+
+    const available =
+      effectiveWebContentWidth -
+      webInnerHorizontalPadding * 2 -
+      webGridGap * (webAuctionColumns - 1);
+    return Math.floor(available / webAuctionColumns);
+  }, [effectiveWebContentWidth, isWeb, webAuctionColumns]);
 
   const fetchAuctions = useCallback(async () => {
     setLoadError(null);
@@ -299,26 +359,26 @@ export function AuctionsListScreen() {
 
   const handleSubmit = async () => {
     const trimmedItemName = itemName.trim();
-    const parsedInitialPrice = parseFloat(initialPrice);
-    const parsedDuration = parseInt(durationMinutes, 10);
+    const parsedInitialPrice = Number.parseFloat(initialPrice);
+    const parsedDuration = Number.parseInt(durationMinutes, 10);
 
     if (trimmedItemName.length < 2) {
       setFormError('El nombre del artículo debe tener al menos 2 caracteres.');
       return;
     }
-    if (isNaN(parsedInitialPrice) || parsedInitialPrice <= 0) {
+    if (Number.isNaN(parsedInitialPrice) || parsedInitialPrice <= 0) {
       setFormError('El precio inicial debe ser un número mayor a 0.');
       return;
     }
-    if (isNaN(parsedDuration) || parsedDuration <= 0) {
+    if (Number.isNaN(parsedDuration) || parsedDuration <= 0) {
       setFormError('La duración debe ser un número de minutos mayor a 0.');
       return;
     }
 
     let parsedBidIncrement: number | undefined;
     if (bidMode === 'fixed_increment') {
-      parsedBidIncrement = parseFloat(bidIncrement);
-      if (isNaN(parsedBidIncrement) || parsedBidIncrement <= 0) {
+      parsedBidIncrement = Number.parseFloat(bidIncrement);
+      if (Number.isNaN(parsedBidIncrement) || parsedBidIncrement <= 0) {
         setFormError('El incremento de puja debe ser un número mayor a 0.');
         return;
       }
@@ -353,7 +413,10 @@ export function AuctionsListScreen() {
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
       <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: isOrganizer && Platform.OS === 'web' ? 24 : 120 }}
+        contentContainerStyle={{
+          paddingBottom: isOrganizer && isWeb ? 24 : 120,
+          paddingHorizontal: isWeb ? 16 : 0,
+        }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -364,29 +427,44 @@ export function AuctionsListScreen() {
           />
         }
       >
+        <View
+          style={{
+            width: '100%',
+            maxWidth: isWeb ? webContainerMaxWidth : undefined,
+            alignSelf: 'center',
+            paddingTop: isWeb ? 8 : 0,
+          }}
+        >
         {/* ── Header ── */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            paddingHorizontal: 20,
-            paddingTop: 16,
-            paddingBottom: 12,
+            paddingHorizontal: isWeb ? 12 : 20,
+            paddingTop: isWeb ? 14 : 16,
+            paddingBottom: isWeb ? 14 : 12,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View
               style={{
-                backgroundColor: '#dce8ff',
+                backgroundColor: isWeb ? '#e9f0ff' : '#dce8ff',
                 borderRadius: 16,
-                padding: 12,
+                padding: isWeb ? 13 : 12,
                 marginRight: 12,
               }}
             >
               <FontAwesome5 color='#1e73fa' name='gavel' size={22} />
             </View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Subastas</Text>
+            <View>
+              <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Subastas</Text>
+              {isWeb ? (
+                <Text style={{ marginTop: 2, fontSize: 12, color: '#6c7f9d' }}>
+                  Panel en vivo de ofertas humanitarias
+                </Text>
+              ) : null}
+            </View>
           </View>
           {isOrganizer ? (
             <Pressable
@@ -394,10 +472,14 @@ export function AuctionsListScreen() {
               style={{
                 backgroundColor: '#1e73fa',
                 borderRadius: 16,
-                width: 46,
-                height: 46,
+                width: isWeb ? 48 : 46,
+                height: isWeb ? 48 : 46,
                 alignItems: 'center',
                 justifyContent: 'center',
+                shadowColor: isWeb ? '#1e73fa' : undefined,
+                shadowOpacity: isWeb ? 0.2 : undefined,
+                shadowOffset: isWeb ? { width: 0, height: 4 } : undefined,
+                shadowRadius: isWeb ? 10 : undefined,
               }}
             >
               <FontAwesome5 color='#fff' name='plus' size={18} />
@@ -405,10 +487,81 @@ export function AuctionsListScreen() {
           ) : null}
         </View>
 
+        {isWeb ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              gap: 12,
+              paddingHorizontal: 12,
+              marginBottom: 10,
+            }}
+          >
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: '#ffffff',
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                borderLeftWidth: 3,
+                borderLeftColor: '#2563eb',
+              }}
+            >
+              <Text style={{ fontSize: 11, color: '#7c8ba3', fontWeight: '700' }}>
+                TOTAL RECAUDADO
+              </Text>
+              <Text style={{ fontSize: 23, fontWeight: '900', color: '#11284d', marginTop: 2 }}>
+                {formatPrice(webSummary.totalRaised, 'COP')}
+              </Text>
+            </View>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: '#ffffff',
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                borderLeftWidth: 3,
+                borderLeftColor: '#06b6d4',
+              }}
+            >
+              <Text style={{ fontSize: 11, color: '#7c8ba3', fontWeight: '700' }}>
+                SUBASTAS ACTIVAS
+              </Text>
+              <Text style={{ fontSize: 23, fontWeight: '900', color: '#11284d', marginTop: 2 }}>
+                {webSummary.activeCount}
+              </Text>
+            </View>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: '#ffffff',
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                borderLeftWidth: 3,
+                borderLeftColor: '#475569',
+              }}
+            >
+              <Text style={{ fontSize: 11, color: '#7c8ba3', fontWeight: '700' }}>
+                SUBASTAS CERRADAS
+              </Text>
+              <Text style={{ fontSize: 23, fontWeight: '900', color: '#11284d', marginTop: 2 }}>
+                {webSummary.closedCount}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {/* ── Loading ── */}
         {isLoading ? (
           <View
-            style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: isWeb ? 12 : 20,
+              marginBottom: 12,
+            }}
           >
             <ActivityIndicator color='#1e73fa' size='small' />
             <Text style={{ marginLeft: 8, fontSize: 13, color: '#50698e' }}>
@@ -421,7 +574,7 @@ export function AuctionsListScreen() {
         {loadError ? (
           <View
             style={{
-              marginHorizontal: 20,
+              marginHorizontal: isWeb ? 12 : 20,
               marginBottom: 12,
               backgroundColor: '#ffecef',
               borderRadius: 14,
@@ -434,8 +587,8 @@ export function AuctionsListScreen() {
         ) : null}
 
         {/* ── Auction list ── */}
-        {!isLoading ? (
-          <View style={{ paddingHorizontal: 20, gap: 12 }}>
+        {isLoading ? null : (
+          <View style={{ paddingHorizontal: isWeb ? 12 : 20, gap: 12 }}>
             {auctions.length === 0 ? (
               <View
                 style={{
@@ -470,10 +623,18 @@ export function AuctionsListScreen() {
                 </Text>
               </View>
             ) : (
-              auctions.map((auction, index) => (
+              <View
+                style={{
+                  flexDirection: isWeb ? 'row' : 'column',
+                  flexWrap: isWeb ? 'wrap' : 'nowrap',
+                  gap: webGridGap,
+                }}
+              >
+                {auctions.map((auction, index) => (
                 <Animated.View
                   entering={FadeInUp.delay(index * 45).duration(240)}
                   key={auction.id}
+                  style={{ width: isWeb ? auctionCardWidth : '100%' }}
                 >
                   <Pressable
                     onPress={() =>
@@ -481,12 +642,14 @@ export function AuctionsListScreen() {
                     }
                     style={{
                       backgroundColor: '#fff',
-                      borderRadius: 20,
-                      padding: 18,
+                      borderRadius: isWeb ? 16 : 20,
+                      padding: isWeb ? 16 : 18,
+                      borderWidth: isWeb ? 1 : 0,
+                      borderColor: isWeb ? '#e7eef9' : undefined,
                       shadowColor: '#163457',
-                      shadowOpacity: 0.07,
+                      shadowOpacity: isWeb ? 0.05 : 0.07,
                       shadowOffset: { width: 0, height: 4 },
-                      shadowRadius: 10,
+                      shadowRadius: isWeb ? 8 : 10,
                       elevation: 3,
                     }}
                   >
@@ -562,40 +725,89 @@ export function AuctionsListScreen() {
                     </View>
                   </Pressable>
                 </Animated.View>
-              ))
+              ))}
+              </View>
             )}
           </View>
-        ) : null}
+        )}
+        </View>
       </ScrollView>
       </View>
 
       {/* ── Create auction modal (organizer only) ── */}
-      <Modal animationType='slide' transparent visible={isOrganizer && isCreateOpen}>
+      <Modal animationType={isWeb ? 'fade' : 'slide'} transparent visible={isOrganizer && isCreateOpen}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
+          style={{
+            flex: 1,
+            alignItems: isWeb ? 'center' : undefined,
+            justifyContent: isWeb ? 'center' : undefined,
+          }}
         >
           <View
-            style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: '#07163166' }}
+            style={{
+              flex: 1,
+              width: '100%',
+              justifyContent: isWeb ? 'center' : 'flex-end',
+              alignItems: isWeb ? 'center' : undefined,
+              backgroundColor: isWeb ? '#0a1a3573' : '#07163166',
+              paddingHorizontal: isWeb ? 16 : 0,
+              paddingVertical: isWeb ? 24 : 0,
+            }}
           >
             <View
               style={{
-                maxHeight: '88%',
-                borderTopLeftRadius: 28,
-                borderTopRightRadius: 28,
-                backgroundColor: '#fff',
-                paddingHorizontal: 20,
-                paddingTop: 20,
+                width: '100%',
+                maxWidth: isWeb ? 860 : undefined,
+                maxHeight: isWeb ? '86%' : '88%',
+                borderTopLeftRadius: isWeb ? 30 : 28,
+                borderTopRightRadius: isWeb ? 30 : 28,
+                borderBottomLeftRadius: isWeb ? 30 : 0,
+                borderBottomRightRadius: isWeb ? 30 : 0,
+                borderWidth: isWeb ? 1 : 0,
+                borderColor: isWeb ? '#d5e3fb' : undefined,
+                backgroundColor: isWeb ? '#fbfdff' : '#fff',
+                overflow: 'hidden',
               }}
             >
               <ScrollView
-                contentContainerStyle={{ paddingBottom: 28 }}
+                contentContainerStyle={{ paddingBottom: 28, paddingHorizontal: 20, paddingTop: 16 }}
                 keyboardShouldPersistTaps='handled'
                 showsVerticalScrollIndicator={false}
               >
-                <Text style={{ fontSize: 18, fontWeight: '900', color: '#17315c' }}>
-                  Crear subasta
-                </Text>
+                <View
+                  style={{
+                    marginHorizontal: -20,
+                    marginTop: -16,
+                    marginBottom: 10,
+                    paddingHorizontal: 20,
+                    paddingVertical: 14,
+                    borderBottomWidth: isWeb ? 1 : 0,
+                    borderBottomColor: '#e9f0fb',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <Text style={{ fontSize: 18, fontWeight: '900', color: '#17315c' }}>
+                    Crear subasta
+                  </Text>
+                  {isWeb ? (
+                    <Pressable
+                      onPress={() => setIsCreateOpen(false)}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 999,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#edf3ff',
+                      }}
+                    >
+                      <FontAwesome5 color='#305c9d' name='times' size={14} />
+                    </Pressable>
+                  ) : null}
+                </View>
 
                 <Text
                   style={{
