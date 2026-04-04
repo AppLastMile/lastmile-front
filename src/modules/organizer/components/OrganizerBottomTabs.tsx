@@ -156,6 +156,8 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
     },
   ];
 
+  const currentPageLabel = tabs.find((tab) => tab.id === activeTab)?.label ?? 'Inicio';
+
   if (isWeb) {
     return (
       <View
@@ -172,10 +174,10 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
         }}
       >
         <Text className='text-xs font-semibold uppercase tracking-[0.28em] text-[#6d7e9a]'>
-          Gestion Lastmile
+          Lastmile
         </Text>
         <Text className='mt-1 text-sm text-[#5a7190]'>
-          Operador de logistica
+          Sección actual: {currentPageLabel}
         </Text>
 
         <View className='mt-6'>
