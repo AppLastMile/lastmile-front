@@ -108,13 +108,14 @@ export function AuctionsListScreen() {
   const isOrganizer = currentUser?.role === 'organizer';
   const isDonor = currentUser?.role === 'donor';
   const isVolunteer = currentUser?.role === 'volunteer';
-  let organizerWebInset = 0;
-
+  let webPanelInset = 0;
   if (Platform.OS === 'web') {
     if (isOrganizer) {
-      organizerWebInset = ORGANIZER_WEB_PANEL_OFFSET;
+      webPanelInset = ORGANIZER_WEB_PANEL_OFFSET;
     } else if (isVolunteer) {
-      organizerWebInset = VOLUNTEER_WEB_PANEL_OFFSET;
+      webPanelInset = VOLUNTEER_WEB_PANEL_OFFSET;
+    } else if (isDonor) {
+      webPanelInset = 250;
     }
   }
 
@@ -160,8 +161,8 @@ export function AuctionsListScreen() {
       return width;
     }
 
-    return Math.max(980, width - organizerWebInset - 44);
-  }, [isWeb, organizerWebInset, width]);
+    return Math.max(980, width - webPanelInset - 44);
+  }, [isWeb, webPanelInset, width]);
 
   const effectiveWebContentWidth = useMemo(() => {
     if (!isWeb) {
@@ -420,7 +421,7 @@ export function AuctionsListScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
-      <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
+      <View style={{ flex: 1, paddingLeft: webPanelInset }}>
       <ScrollView
         contentContainerStyle={{
           paddingBottom: (isOrganizer || isVolunteer) && isWeb ? 24 : 120,
