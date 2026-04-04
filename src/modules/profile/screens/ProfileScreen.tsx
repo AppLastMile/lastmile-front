@@ -35,13 +35,14 @@ export function ProfileScreen() {
   const isVolunteer = currentUser?.role === 'volunteer';
   const isWeb = Platform.OS === 'web';
   const hasBottomTabs = isOrganizer || isDonor || isVolunteer;
-  let organizerWebInset = 0;
-
+  let webPanelInset = 0;
   if (isWeb) {
     if (isOrganizer) {
-      organizerWebInset = ORGANIZER_WEB_PANEL_OFFSET;
+      webPanelInset = ORGANIZER_WEB_PANEL_OFFSET;
     } else if (isVolunteer) {
-      organizerWebInset = VOLUNTEER_WEB_PANEL_OFFSET;
+      webPanelInset = VOLUNTEER_WEB_PANEL_OFFSET;
+    } else if (isDonor) {
+      webPanelInset = 250;
     }
   }
   let contentBottomInset = 24;
@@ -63,7 +64,7 @@ export function ProfileScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
-      <View className='flex-1' style={{ paddingLeft: organizerWebInset }}>
+      <View className='flex-1' style={{ paddingLeft: webPanelInset }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: contentBottomInset }}>
         <View
           className='rounded-2xl border border-[#d8e7ff] bg-white px-5 py-6'
