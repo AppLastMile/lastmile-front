@@ -1,10 +1,12 @@
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, Pressable, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type OrganizerTab = 'inicio' | 'campanas' | 'subastas' | 'logistica' | 'perfil';
+
+export const ORGANIZER_WEB_PANEL_OFFSET = 274;
 
 type OrganizerBottomTabsProps = Readonly<{
   activeTab: OrganizerTab;
@@ -87,9 +89,34 @@ function OrganizerTabButton({
   );
 }
 
+type OrganizerSidebarButtonProps = Readonly<{
+  label: string;
+  icon: React.ComponentProps<typeof FontAwesome5>['name'];
+  route: string;
+  isActive: boolean;
+  onPress: (route: string) => void;
+}>;
+
+function OrganizerSidebarButton({ label, icon, route, isActive, onPress }: OrganizerSidebarButtonProps) {
+  return (
+    <Pressable
+      className={`mb-2 flex-row items-center rounded-2xl px-3 py-3 ${isActive ? 'bg-[#eaf2ff]' : 'bg-transparent'}`}
+      onPress={() => onPress(route)}
+    >
+      <View className={`h-9 w-9 items-center justify-center rounded-xl ${isActive ? 'bg-[#0a63ff]' : 'bg-[#edf3fb]'}`}>
+        <FontAwesome5 color={isActive ? '#ffffff' : '#5d708d'} name={icon} size={15} />
+      </View>
+      <Text className={`ml-3 text-sm font-semibold ${isActive ? 'text-[#0e3472]' : 'text-[#55708f]'}`}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const isWeb = Platform.OS === 'web';
 
   const tabs: Array<{
     id: OrganizerTab;
@@ -99,8 +126,8 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
   }> = [
     {
       id: 'inicio',
-      label: 'Inicio',
-      icon: 'home',
+      label: 'Mapa',
+      icon: 'map-marked-alt',
       route: '/organizer/create-mission',
     },
     {
@@ -128,6 +155,50 @@ export function OrganizerBottomTabs({ activeTab }: OrganizerBottomTabsProps) {
       route: '/organizer/profile',
     },
   ];
+
+  const currentPageLabel = tabs.find((tab) => tab.id === activeTab)?.label ?? 'Inicio';
+
+  if (isWeb) {
+    return (
+      <View
+        className='absolute z-50 w-[250px] rounded-[30px] border border-[#d6e3fb] bg-white px-4 py-5'
+        style={{
+          left: 12,
+          top: Math.max(insets.top + 12, 12),
+          bottom: 12,
+          shadowColor: '#102244',
+          shadowOpacity: 0.08,
+          shadowOffset: { width: 0, height: 12 },
+          shadowRadius: 26,
+          elevation: 0,
+        }}
+      >
+        <Text className='text-xs font-semibold uppercase tracking-[0.28em] text-[#6d7e9a]'>
+          Lastmile
+        </Text>
+        <Text className='mt-1 text-sm text-[#5a7190]'>
+          Sección actual: {currentPageLabel}
+        </Text>
+
+        <View className='mt-6'>
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTab;
+
+            return (
+              <OrganizerSidebarButton
+                key={tab.id}
+                icon={tab.icon}
+                isActive={isActive}
+                label={tab.label}
+                onPress={(route) => router.push(route as never)}
+                route={tab.route}
+              />
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View

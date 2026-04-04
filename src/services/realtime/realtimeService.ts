@@ -15,7 +15,7 @@ let connectErrors = 0;
 const joinedRooms = new Set<string>();
 let activeAuthToken: string | undefined;
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
+const DEFAULT_API_BASE_URL = 'http://localhost:3001';
 const DEFAULT_WS_NAMESPACE = '/ws';
 const DEFAULT_WS_PATH = '/socket.io';
 
@@ -82,6 +82,12 @@ function getApiBaseUrl() {
 }
 
 function resolveWsBaseUrl() {
+  // En web: siempre usar localhost:3001, ignorar ngrok del .env
+  if (Platform.OS === 'web') {
+    return 'http://localhost:3001';
+  }
+
+  // En nativo: usar variable de entorno (ngrok) o default
   const envWsUrl = getEnvValue('EXPO_PUBLIC_WS_URL');
 
   if (envWsUrl) {
@@ -94,20 +100,12 @@ function resolveWsBaseUrl() {
       const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
 
       if (isLocalhost) {
-        if (Platform.OS === 'web') {
-          const browserHost = getBrowserHost();
+        const expoHostIp = getExpoHostIp();
 
-          if (browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1') {
-            parsed.hostname = browserHost;
-          }
-        } else {
-          const expoHostIp = getExpoHostIp();
-
-          if (expoHostIp) {
-            parsed.hostname = expoHostIp;
-          } else if (Platform.OS === 'android') {
-            parsed.hostname = '10.0.2.2';
-          }
+        if (expoHostIp) {
+          parsed.hostname = expoHostIp;
+        } else if (Platform.OS === 'android') {
+          parsed.hostname = '10.0.2.2';
         }
       }
 
@@ -271,7 +269,7 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
     transports,
   });
 
-  socket = io(`${baseUrl}${namespace}`, {
+  const socketOptions: Parameters<typeof io>[1] = {
     autoConnect: true,
     timeout: 8000,
     reconnection: true,
@@ -289,7 +287,17 @@ export function connectRealtime(auth: RealtimeAuth = {}) {
           userId: auth.userId,
           role: auth.role,
         },
-  });
+  };
+
+  // Agregar headers HTTP para CORS en nativo
+  if (Platform.OS !== 'web') {
+    socketOptions.extraHeaders = {
+      'ngrok-skip-browser-warning': '69420',
+      'X-Requested-With': 'XMLHttpRequest',
+    };
+  }
+
+  socket = io(`${baseUrl}${namespace}`, socketOptions);
 
   activeAuthToken = hasToken ? auth.token : undefined;
 

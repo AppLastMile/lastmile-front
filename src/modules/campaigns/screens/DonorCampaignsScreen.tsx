@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -52,6 +52,7 @@ function getProgressValue(campaign: Campaign) {
 
 export function DonorCampaignsScreen() {
   const { currentUser } = useAuthSession();
+  const { width } = useWindowDimensions();
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -215,6 +216,30 @@ export function DonorCampaignsScreen() {
     role: currentUser?.role,
     token: currentUser?.accessToken,
   });
+
+  const campaignTotals = useMemo(() => {
+    const totalCollected = campaigns.reduce((sum, c) => sum + (c.collectedMoney || 0), 0);
+    const totalGoal = campaigns.reduce((sum, c) => sum + (c.goalMoney || 0), 0);
+    const closedCount = campaigns.filter((c) => getProgressValue(c) >= 100).length;
+    return { totalCollected, totalGoal, closedCount };
+  }, [campaigns]);
+
+  const isWeb = Platform.OS === 'web';
+  const donorWebInset = isWeb ? 250 : 0;
+  const webGridGap = 12;
+
+  const webContentWidth = useMemo(() => {
+    if (!isWeb) return width;
+    return Math.max(980, width - donorWebInset - 44);
+  }, [isWeb, donorWebInset, width]);
+
+  const webCampaignColumns = useMemo(() => (isWeb ? 3 : 1), [isWeb, webContentWidth]);
+
+  const campaignCardWidth = useMemo(() => {
+    if (!isWeb) return undefined;
+    const available = webContentWidth - webGridGap * (webCampaignColumns - 1);
+    return Math.max(300, Math.floor(available / webCampaignColumns));
+  }, [isWeb, webCampaignColumns, webContentWidth]);
 
   const refreshCampaigns = useCallback(async () => {
     try {
@@ -497,251 +522,309 @@ export function DonorCampaignsScreen() {
 
     setChatDraft('');
   };
-
   return (
-    <SafeAreaView className='flex-1 bg-[#eef4ff]' edges={['top']}>
-      <View className='flex-1 px-4 pt-4'>
-        <View className='mb-1 flex-row items-center justify-between'>
-          <View className='flex-row items-center'>
-            <View
-              style={{
-                backgroundColor: '#dce8ff',
-                borderRadius: 16,
-                padding: 12,
-                marginRight: 12,
-              }}
-            >
-              <FontAwesome5 color='#1e73fa' name='bullhorn' size={22} />
-            </View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Campañas</Text>
-          </View>
-
-          <View className='relative'>
-            <NotificationsBell
-              notifications={notifications}
-              onMarkAllAsRead={markAllAsRead}
-              toastMessage={toastMessage}
-              unreadCount={unreadCount}
-            />
-          </View>
-        </View>
-
-        <Text className='text-2xl font-extrabold text-[#16325d]'>Campañas Activas</Text>
-        <Text className='mt-1 text-sm text-[#4d648a]'>
-          Campañas creadas por organizadores para apoyar las misiones.
-        </Text>
-
-        <View className='mt-3 flex-row items-center justify-between'>
-          <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
-        </View>
-
-        {isLoading ? (
-          <View className='mt-6 items-center'>
-            <ActivityIndicator color='#1f5fe0' size='small' />
-          </View>
-        ) : null}
-
-        {loadError ? (
-          <Text className='mt-4 rounded-xl bg-[#ffecef] px-3 py-2 text-sm text-[#9f2238]'>
-            {loadError}
-          </Text>
-        ) : null}
-
-        <ScrollView className='mt-4' contentContainerStyle={{ gap: 12, paddingBottom: 120 }}>
-          {campaigns.map((campaignItem, index) => {
-            const eventInfo = eventsById.get(campaignItem.eventId);
-            const progress = getProgressValue(campaignItem);
-            const isClosed = progress >= 100;
-            const inventory = inventoryByCampaign[campaignItem.id] ?? {};
-            const physicalInventorySummary = PHYSICAL_DONATION_OPTIONS.map((option) => ({
-              label: option.label,
-              quantity: inventory[option.key] ?? 0,
-            })).filter((entry) => entry.quantity > 0);
-
-            const selectedItem = selectedPhysicalItemByCampaign[campaignItem.id] ?? PHYSICAL_DONATION_OPTIONS[0].key;
-            const selectedItemLabel =
-              PHYSICAL_DONATION_OPTIONS.find((option) => option.key === selectedItem)?.label ?? selectedItem;
-            const isDropdownOpen = isPhysicalDropdownOpenByCampaign[campaignItem.id] ?? false;
-
-            return (
-              <Animated.View
-                className='relative overflow-hidden rounded-2xl border border-[#d8e6ff] bg-white p-4'
-                entering={FadeInUp.delay(index * 45).duration(240)}
-                key={campaignItem.id}
+    <SafeAreaView className='flex-1 bg-[#eef4ff]'>
+      <View className='flex-1' style={{ paddingLeft: donorWebInset }}>
+        <View
+          className='relative flex-1 px-4 pt-4'
+          style={
+            isWeb
+              ? {
+                  alignSelf: 'center',
+                  width: '100%',
+                  maxWidth: 1760,
+                  paddingHorizontal: 16,
+                  paddingTop: 18,
+                }
+              : undefined
+          }
+        >
+          <View className='mb-1 flex-row items-center justify-between'>
+            <View className='flex-row items-center'>
+              <View
+                style={{
+                  backgroundColor: '#dce8ff',
+                  borderRadius: 16,
+                  padding: 12,
+                  marginRight: 12,
+                }}
               >
-                {isClosed ? (
-                  <View className='absolute inset-0 z-10 items-center justify-center bg-[#6b7280cc] px-4'>
-                    <View className='w-full rounded-2xl border border-white/20 bg-white px-4 py-4 shadow-lg'>
-                      <Text className='text-center text-[11px] font-bold uppercase tracking-[1.6px] text-[#0f7a46]'>
-                        Campaña cerrada
-                      </Text>
-                      <Text className='mt-1 text-center text-lg font-extrabold text-[#16325d]'>
-                        Meta alcanzada
-                      </Text>
-                      <Text className='mt-2 text-center text-sm text-[#4d648a]'>
-                        Esta campaña llegó al 100% de su objetivo y ya no acepta donaciones.
-                      </Text>
+                <FontAwesome5 color='#1e73fa' name='bullhorn' size={22} />
+              </View>
+              <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Campañas</Text>
+            </View>
+
+            <View className='relative'>
+              <NotificationsBell
+                notifications={notifications}
+                onMarkAllAsRead={markAllAsRead}
+                toastMessage={toastMessage}
+                unreadCount={unreadCount}
+              />
+            </View>
+          </View>
+
+          <Text className='text-2xl font-extrabold text-[#16325d]'>Campañas Activas</Text>
+          <Text className='mt-1 text-sm text-[#4d648a]'>
+            Campañas creadas por organizadores para apoyar las misiones.
+          </Text>
+
+          <View className='mt-3 flex-row items-center justify-between'>
+            <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
+          </View>
+
+          {isWeb ? (
+            <View className='mt-4 flex-row gap-3'>
+              <View className='flex-[1.6] rounded-2xl border border-[#d8e6ff] bg-white px-5 py-4'>
+                <Text className='text-[11px] font-semibold uppercase tracking-[0.18em] text-[#5f7da7]'>
+                  Total posible al cierre
+                </Text>
+                <Text className='mt-1 text-4xl font-extrabold text-[#13274d]'>
+                  {formatMoney(campaignTotals.totalGoal)}
+                  <Text className='text-xl font-semibold text-[#8ea4c6]'> COP</Text>
+                </Text>
+                <Text className='mt-2 text-xs font-semibold text-[#6d82a5]'>
+                  Meta acumulada si todas las campañas llegan a cerrarse.
+                </Text>
+              </View>
+              <View className='flex-[1] rounded-2xl bg-[#1f5fe0] px-5 py-4'>
+                <Text className='text-[11px] font-semibold uppercase tracking-[0.18em] text-[#c8dcff]'>
+                  Total recaudado
+                </Text>
+                <Text className='mt-1 text-3xl font-extrabold text-white'>
+                  {formatMoney(campaignTotals.totalCollected)}
+                </Text>
+                <Text className='mt-2 text-xs font-semibold text-[#d6e6ff]'>
+                  {campaignTotals.closedCount} campañas ya cerradas por meta alcanzada
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {isLoading ? (
+            <View className='mt-6 items-center'>
+              <ActivityIndicator color='#1f5fe0' size='small' />
+            </View>
+          ) : null}
+
+          {loadError ? (
+            <Text className='mt-4 rounded-xl bg-[#ffecef] px-3 py-2 text-sm text-[#9f2238]'>
+              {loadError}
+            </Text>
+          ) : null}
+
+          <ScrollView
+            className='mt-4'
+            contentContainerStyle={{
+              gap: webGridGap,
+              paddingBottom: Platform.OS === 'web' ? 24 : 120,
+              ...(isWeb
+                ? {
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    alignItems: 'flex-start',
+                    justifyContent: 'flex-start',
+                    width: '100%',
+                  }
+                : null),
+            }}
+          >
+            {campaigns.map((campaignItem, index) => {
+              const eventInfo = eventsById.get(campaignItem.eventId);
+              const progress = getProgressValue(campaignItem);
+              const isClosed = progress >= 100;
+
+              const inventory = inventoryByCampaign[campaignItem.id] ?? {};
+              const physicalInventorySummary = PHYSICAL_DONATION_OPTIONS.map((option) => ({
+                label: option.label,
+                quantity: inventory[option.key] ?? 0,
+              })).filter((entry) => entry.quantity > 0);
+
+              return (
+                <Animated.View
+                  className='relative overflow-hidden rounded-2xl border border-[#d8e6ff] bg-white p-4'
+                  entering={FadeInUp.delay(index * 45).duration(240)}
+                  key={campaignItem.id}
+                  style={
+                    isWeb
+                      ? {
+                          flexGrow: 1,
+                          flexBasis: 0,
+                          minWidth: campaignCardWidth,
+                          minHeight: 300,
+                          shadowColor: '#163457',
+                          shadowOpacity: 0.08,
+                          shadowOffset: { width: 0, height: 6 },
+                          shadowRadius: 14,
+                          elevation: 4,
+                        }
+                      : undefined
+                  }
+                >
+                  {isClosed ? (
+                    <View className='absolute inset-0 z-10 items-center justify-center bg-[#6b7280cc] px-4'>
+                      <View className='w-full rounded-2xl border border-white/20 bg-white px-4 py-4 shadow-lg'>
+                        <Text className='text-center text-[11px] font-bold uppercase tracking-[1.6px] text-[#0f7a46]'>
+                          Campaña cerrada
+                        </Text>
+                        <Text className='mt-1 text-center text-lg font-extrabold text-[#16325d]'>
+                          Meta alcanzada
+                        </Text>
+                        <Text className='mt-2 text-center text-sm font-semibold text-[#1f4fa7]'>
+                          Recaudado: {formatMoney(campaignItem.collectedMoney)}
+                        </Text>
+                        <Text className='mt-2 text-center text-sm text-[#4d648a]'>
+                          Esta campaña llegó al $100\%$ de su objetivo y quedó cerrada para nuevos aportes.
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ) : null}
-
-                <View className={isClosed ? 'opacity-30' : ''}>
-                  <View className='flex-row items-start justify-between'>
-                  <View className='flex-1 pr-3'>
-                    <Text className='text-base font-extrabold text-[#1b3259]'>{campaignItem.name}</Text>
-                    <Text className='mt-1 text-xs text-[#5d7399]'>
-                      {eventInfo
-                        ? `Evento: ${eventInfo.name} (${eventInfo.city})`
-                        : `Evento asociado: ID ${campaignItem.eventId}`}
-                    </Text>
-                  </View>
-
-                  <View className='items-end gap-2'>
-                    <View className='rounded-full bg-[#e9f1ff] px-3 py-1'>
-                      <Text className='text-xs font-bold text-[#1f4fb6]'>{progress}%</Text>
-                    </View>
-                    <Pressable
-                      className='h-9 w-9 items-center justify-center rounded-full bg-[#1f5fe0]'
-                      onPress={() => openChat(campaignItem.id)}
-                    >
-                      <Text className='text-[10px] font-bold text-white'>Chat</Text>
-                    </Pressable>
-                  </View>
-                  </View>
-
-                  <Text className='mt-3 text-sm text-[#4d648a]' numberOfLines={3}>
-                    {campaignItem.description || 'Campana humanitaria en curso.'}
-                  </Text>
-
-                  <View className='mt-3 flex-row gap-2'>
-                    <View className='flex-1 rounded-xl bg-[#edf3ff] p-3'>
-                      <Text className='text-xs font-semibold text-[#4b648d]'>Recaudado</Text>
-                      <Text className='mt-1 text-sm font-extrabold text-[#1f4fa7]'>
-                        {formatMoney(campaignItem.collectedMoney)}
-                      </Text>
-                    </View>
-                    <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
-                      <Text className='text-xs font-semibold text-[#4b648d]'>Meta</Text>
-                      <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
-                        {formatMoney(campaignItem.goalMoney)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
-                    <View className='h-full rounded-full bg-[#1f5fe0]' style={{ width: `${Math.max(6, progress)}%` }} />
-                  </View>
-
-                  {isClosed ? null : (
-                  <View className='mt-3 flex-row items-center gap-2'>
-                    <TextInput
-                      className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
-                      keyboardType='number-pad'
-                      onChangeText={(value) =>
-                        setMoneyDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                      }
-                      placeholder='Monto COP'
-                      placeholderTextColor='#8ea6c8'
-                      value={moneyDraftByCampaign[campaignItem.id] ?? ''}
-                    />
-                    <Pressable
-                      className='rounded-xl bg-[#1f5fe0] px-3 py-2'
-                      onPress={() => handleDonateMoney(campaignItem)}
-                    >
-                      <Text className='text-xs font-bold text-white'>
-                        {isDonatingMoneyByCampaign[campaignItem.id] ? 'Donando...' : 'Donar'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                  )}
-
-                  {donationFeedbackByCampaign[campaignItem.id] ? (
-                    <Text className='mt-2 text-xs text-[#3a5176]'>
-                      {donationFeedbackByCampaign[campaignItem.id]}
-                    </Text>
                   ) : null}
 
-                  {isClosed ? null : (
-                  <View className='mt-3 rounded-xl bg-[#f6f9ff] p-3'>
-                    <Text className='text-xs font-semibold text-[#27436d]'>Donar articulos fisicos</Text>
-
-                    <Pressable
-                      className='mt-2 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2'
-                      onPress={() =>
-                        setIsPhysicalDropdownOpenByCampaign((prev) => ({
-                          ...prev,
-                          [campaignItem.id]: !isDropdownOpen,
-                        }))
-                      }
-                    >
-                      <Text className='text-[#1f365d]'>Articulo: {selectedItemLabel}</Text>
-                    </Pressable>
-
-                    {isDropdownOpen ? (
-                      <View className='mt-2 overflow-hidden rounded-xl border border-[#d6e3fb] bg-white'>
-                        {PHYSICAL_DONATION_OPTIONS.map((option) => (
-                          <Pressable
-                            className='border-b border-[#edf3ff] px-3 py-2'
-                            key={option.key}
-                            onPress={() => {
-                              setSelectedPhysicalItemByCampaign((prev) => ({
-                                ...prev,
-                                [campaignItem.id]: option.key,
-                              }));
-                              setIsPhysicalDropdownOpenByCampaign((prev) => ({
-                                ...prev,
-                                [campaignItem.id]: false,
-                              }));
-                            }}
-                          >
-                            <Text className='text-[#1f365d]'>{option.label}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    ) : null}
-
-                    <View className='mt-2 flex-row items-center gap-2'>
-                      <TextInput
-                        className='flex-1 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2 text-[#18335f]'
-                        keyboardType='number-pad'
-                        onChangeText={(value) =>
-                          setPhysicalQuantityByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
-                        }
-                        placeholder='Cantidad'
-                        placeholderTextColor='#8ea6c8'
-                        value={physicalQuantityByCampaign[campaignItem.id] ?? ''}
-                      />
-                      <Pressable
-                        className='rounded-xl bg-[#1d8a51] px-3 py-2'
-                        onPress={() => handleDonatePhysicalItem(campaignItem.id)}
-                      >
-                        <Text className='text-xs font-bold text-white'>
-                          {isDonatingItemsByCampaign[campaignItem.id] ? 'Donando...' : 'Donar articulo'}
+                  <View className={isClosed ? 'opacity-30' : ''}>
+                    <View className='flex-row items-start justify-between'>
+                      <View className='flex-1 pr-3'>
+                        <Text className='text-base font-extrabold text-[#1b3259]'>{campaignItem.name}</Text>
+                        <Text className='mt-1 text-xs text-[#5d7399]'>
+                          Evento: {eventInfo ? `${eventInfo.name} (${eventInfo.city})` : `ID ${campaignItem.eventId}`}
                         </Text>
+                      </View>
+
+                      <Pressable
+                        className='h-10 w-10 items-center justify-center rounded-full bg-[#1f5fe0]'
+                        onPress={() => openChat(campaignItem.id)}
+                      >
+                        <Text className='text-[10px] font-bold text-white'>Chat</Text>
                       </Pressable>
                     </View>
-                  </View>
-                  )}
 
-                  <View className='mt-3 rounded-xl bg-[#edf3ff] p-3'>
-                    <Text className='text-xs font-semibold text-[#27436d]'>Elementos donados</Text>
-                    {physicalInventorySummary.length === 0 ? (
-                      <Text className='mt-1 text-xs text-[#5d7399]'>Aun no hay elementos donados.</Text>
+                    <View className='mt-3 flex-row gap-2'>
+                      <View className='flex-1 rounded-xl bg-[#edf3ff] p-3'>
+                        <Text className='text-xs font-semibold text-[#4b648d]'>Fondos</Text>
+                        <Text className='mt-1 text-sm font-extrabold text-[#1f4fa7]'>
+                          {formatMoney(campaignItem.collectedMoney)}
+                        </Text>
+                      </View>
+                      <View className='flex-1 rounded-xl bg-[#ebfff1] p-3'>
+                        <Text className='text-xs font-semibold text-[#4b648d]'>Meta</Text>
+                        <Text className='mt-1 text-sm font-extrabold text-[#1b7b45]'>
+                          {formatMoney(campaignItem.goalMoney)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View className='mt-3 h-2 overflow-hidden rounded-full bg-[#e4ecfb]'>
+                      <View className='h-full rounded-full bg-[#1f5fe0]' style={{ width: `${Math.max(6, progress)}%` }} />
+                    </View>
+
+                    {isClosed ? (
+                      <Text className='mt-3 text-xs font-semibold text-[#4b648d]'>
+                        El estado se marcó automáticamente al alcanzar la meta.
+                      </Text>
                     ) : (
-                      <Text className='mt-1 text-xs text-[#1f365d]'>
-                        {physicalInventorySummary.map((entry) => `${entry.label}: ${entry.quantity}`).join(' | ')}
+                      <Text className='mt-3 text-xs font-semibold text-[#4b648d]'>
+                        Aún está activa y sigue recibiendo apoyo.
                       </Text>
                     )}
-                  </View>
-                </View>
-              </Animated.View>
-            );
-          })}
 
-          {!isLoading && !loadError && campaigns.length === 0 ? (
-            <Text className='text-sm text-[#5d7498]'>Aun no hay campañas publicadas.</Text>
-          ) : null}
-        </ScrollView>
+                    <View className='mt-3 rounded-xl bg-[#edf3ff] p-3'>
+                      <Text className='text-xs font-semibold text-[#27436d]'>Elementos donados</Text>
+                      {physicalInventorySummary.length === 0 ? (
+                        <Text className='mt-1 text-xs text-[#5d7399]'>Aun no hay elementos donados.</Text>
+                      ) : (
+                        <Text className='mt-1 text-xs text-[#1f365d]'>
+                          {physicalInventorySummary.map((entry) => `${entry.label}: ${entry.quantity}`).join(' | ')}
+                        </Text>
+                      )}
+                    </View>
+
+                    {isClosed ? null : (
+                      <View className='mt-3 flex-row items-center gap-2'>
+                        <TextInput
+                          className='flex-1 rounded-xl border border-[#d3e2fb] bg-[#f8fbff] px-3 py-2 text-[#18335f]'
+                          keyboardType='number-pad'
+                          onChangeText={(value) => setMoneyDraftByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))}
+                          placeholder='Monto COP'
+                          placeholderTextColor='#8ea6c8'
+                          value={moneyDraftByCampaign[campaignItem.id] ?? ''}
+                        />
+                        <Pressable className='rounded-xl bg-[#1f5fe0] px-3 py-2' onPress={() => handleDonateMoney(campaignItem)}>
+                          <Text className='text-xs font-bold text-white'>
+                            {isDonatingMoneyByCampaign[campaignItem.id] ? 'Donando...' : 'Donar'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    )}
+
+                    {donationFeedbackByCampaign[campaignItem.id] ? (
+                      <Text className='mt-2 text-xs text-[#3a5176]'>{donationFeedbackByCampaign[campaignItem.id]}</Text>
+                    ) : null}
+                    {isClosed ? null : (
+                      <View className='mt-3 rounded-xl bg-[#f6f9ff] p-3'>
+                        <Text className='text-xs font-semibold text-[#27436d]'>Donar articulos fisicos</Text>
+
+                        <Pressable
+                          className='mt-2 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2'
+                          onPress={() =>
+                            setIsPhysicalDropdownOpenByCampaign((prev) => ({
+                              ...prev,
+                              [campaignItem.id]: !prev[campaignItem.id],
+                            }))
+                          }
+                        >
+                          <Text className='text-[#1f365d]'>Articulo: {(
+                            PHYSICAL_DONATION_OPTIONS.find((o) => o.key === selectedPhysicalItemByCampaign[campaignItem.id])?.label ?? PHYSICAL_DONATION_OPTIONS[0].label
+                          )}</Text>
+                        </Pressable>
+
+                        {isPhysicalDropdownOpenByCampaign[campaignItem.id] ? (
+                          <View className='mt-2 overflow-hidden rounded-xl border border-[#d6e3fb] bg-white'>
+                            {PHYSICAL_DONATION_OPTIONS.map((option) => (
+                              <Pressable
+                                className='border-b border-[#edf3ff] px-3 py-2'
+                                key={option.key}
+                                onPress={() => {
+                                  setSelectedPhysicalItemByCampaign((prev) => ({ ...prev, [campaignItem.id]: option.key }));
+                                  setIsPhysicalDropdownOpenByCampaign((prev) => ({ ...prev, [campaignItem.id]: false }));
+                                }}
+                              >
+                                <Text className='text-[#1f365d]'>{option.label}</Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        ) : null}
+
+                        <View className='mt-2 flex-row items-center gap-2'>
+                          <TextInput
+                            className='flex-1 rounded-xl border border-[#d3e2fb] bg-white px-3 py-2 text-[#18335f]'
+                            keyboardType='number-pad'
+                            onChangeText={(value) =>
+                              setPhysicalQuantityByCampaign((prev) => ({ ...prev, [campaignItem.id]: value }))
+                            }
+                            placeholder='Cantidad'
+                            placeholderTextColor='#8ea6c8'
+                            value={physicalQuantityByCampaign[campaignItem.id] ?? ''}
+                          />
+                          <Pressable
+                            className='rounded-xl bg-[#1d8a51] px-3 py-2'
+                            onPress={() => handleDonatePhysicalItem(campaignItem.id)}
+                          >
+                            <Text className='text-xs font-bold text-white'>
+                              {isDonatingItemsByCampaign[campaignItem.id] ? 'Donando...' : 'Donar articulo'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </Animated.View>
+              );
+            })}
+
+            {!isLoading && campaigns.length === 0 ? (
+              <Text className='text-sm text-[#5d7498]'>Aun no hay campañas publicadas.</Text>
+            ) : null}
+          </ScrollView>
+        </View>
       </View>
 
       <CampaignChatModal
@@ -752,6 +835,7 @@ export function DonorCampaignsScreen() {
         onClose={() => setChatCampaignId(null)}
         onSend={handleSendChat}
         visible={Boolean(chatCampaignId)}
+        inlineOnWeb
       />
 
       {currentUser?.role === 'donor' ? <DonorBottomTabs activeTab='campanas' /> : null}

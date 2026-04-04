@@ -1,18 +1,19 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useRouter } from 'expo-router';
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import 'leaflet/dist/leaflet.css';
 
 import {
@@ -20,7 +21,6 @@ import {
   type ColombianCity,
   findColombianCityByName,
 } from '@/modules/missions/constants/colombianCities';
-import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
 import { createEvent, type EventSummary, getEvents } from '@/services/api/eventsService';
 import { getPickupPoints, type PickupPoint } from '@/services/api/logisticsService';
 import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
@@ -29,8 +29,117 @@ const DEFAULT_CREATED_BY = 1;
 const DEFAULT_DISASTER_TYPE = 'desastre_natural';
 const COLOMBIA_CENTER: [number, number] = [4.5709, -74.2973];
 
+type OrganizerNavItem = Readonly<{
+  id: string;
+  label: string;
+  icon: ComponentProps<typeof MaterialIcons>['name'];
+  route: string;
+  isActive?: boolean;
+}>;
+
+type SummaryPillProps = Readonly<{
+  label: string;
+  value: string;
+  accent: string;
+}>;
+
+function SummaryPill({ label, value, accent }: SummaryPillProps) {
+  return (
+    <View className='rounded-2xl border border-[#dce7fb] bg-white px-4 py-3 shadow-[0_8px_20px_rgba(20,40,80,0.06)]'>
+      <Text className='text-[11px] font-semibold uppercase tracking-[0.22em] text-[#6f7f9b]'>{label}</Text>
+      <Text className='mt-1 text-sm font-bold text-[#17325b]'>{value}</Text>
+      <View className='mt-2 h-1.5 w-16 rounded-full' style={{ backgroundColor: accent }} />
+    </View>
+  );
+}
+
+function SideNavItem({ label, icon, route, isActive, onPress }: OrganizerNavItem & { onPress: (route: string) => void }) {
+  return (
+    <Pressable
+      className={`mb-2 flex-row items-center rounded-2xl px-3 py-3 ${isActive ? 'bg-[#eaf2ff]' : 'bg-transparent'}`}
+      onPress={() => onPress(route)}
+    >
+      <View className={`h-9 w-9 items-center justify-center rounded-xl ${isActive ? 'bg-[#0a63ff]' : 'bg-[#edf3fb]'}`}>
+        <MaterialIcons color={isActive ? '#fff' : '#5d708d'} name={icon} size={18} />
+      </View>
+      <Text className={`ml-3 text-sm font-semibold ${isActive ? 'text-[#0e3472]' : 'text-[#55708f]'}`}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+type RecenterMapProps = Readonly<{
+  location: [number, number] | null;
+  commandId: number;
+  locateCommandId: number;
+  onLocationResolved: (location: [number, number]) => void;
+  onLocateFinished: (ok: boolean) => void;
+}>;
+
+function RecenterMap({
+  location,
+  commandId,
+  locateCommandId,
+  onLocationResolved,
+  onLocateFinished,
+}: RecenterMapProps) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!location || commandId === 0) {
+      return;
+    }
+
+    map.flyTo(location, 13, {
+      animate: true,
+      duration: 0.8,
+    });
+  }, [commandId, location, map]);
+
+  useEffect(() => {
+    if (locateCommandId === 0) {
+      return;
+    }
+
+    const handleLocationFound = (event: { latlng: { lat: number; lng: number } }) => {
+      const found: [number, number] = [event.latlng.lat, event.latlng.lng];
+      onLocationResolved(found);
+      map.flyTo(found, 13, {
+        animate: true,
+        duration: 0.8,
+      });
+      onLocateFinished(true);
+    };
+
+    const handleLocationError = () => {
+      onLocateFinished(false);
+    };
+
+    map.once('locationfound', handleLocationFound);
+    map.once('locationerror', handleLocationError);
+    map.locate({
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+      setView: false,
+    });
+
+    return () => {
+      map.off('locationfound', handleLocationFound);
+      map.off('locationerror', handleLocationError);
+    };
+  }, [locateCommandId, map, onLocateFinished, onLocationResolved]);
+
+  return null;
+}
+
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export function CreateMissionScreen() {
-  const [isEventMenuOpen, setIsEventMenuOpen] = useState(false);
+  const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1200;
+  const [isMissionMenuOpen, setIsMissionMenuOpen] = useState(false);
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
 
@@ -46,6 +155,11 @@ export function CreateMissionScreen() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdEventLabel, setCreatedEventLabel] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
+  const [isLocatingUser, setIsLocatingUser] = useState(false);
+  const [centerCommandId, setCenterCommandId] = useState(0);
+  const [locateCommandId, setLocateCommandId] = useState(0);
+  const [locationActionError, setLocationActionError] = useState<string | null>(null);
 
   const canCreateEvent = useMemo(
     () =>
@@ -104,6 +218,14 @@ export function CreateMissionScreen() {
         ),
     [pickupPoints]
   );
+
+  const navItems: OrganizerNavItem[] = [
+    { id: 'mapa', label: 'Mapa', icon: 'map', route: '/organizer/create-mission', isActive: true },
+    { id: 'campanas', label: 'Campañas', icon: 'campaign', route: '/organizer/campaigns' },
+    { id: 'subastas', label: 'Subastas', icon: 'gavel', route: '/organizer/auctions' },
+    { id: 'logistica', label: 'Logística', icon: 'local-shipping', route: '/organizer/logistics' },
+    { id: 'perfil', label: 'Perfil', icon: 'person', route: '/organizer/profile' },
+  ];
 
   const mapCenter = useMemo<[number, number]>(() => {
     if (mappedEvents.length > 0) {
@@ -211,6 +333,41 @@ export function CreateMissionScreen() {
     };
   }, [createdEventLabel]);
 
+  const centerMapOnLocation = useCallback((location: [number, number]) => {
+    setMyLocation(location);
+    setCenterCommandId((current) => current + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!navigator?.geolocation) {
+      return;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setMyLocation([position.coords.latitude, position.coords.longitude]);
+      },
+      () => {
+        // Keep the map useful without location permission.
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 5000,
+      }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  const requestUserLocation = useCallback(() => {
+    setIsLocatingUser(true);
+    setLocationActionError(null);
+    setLocateCommandId((current) => current + 1);
+  }, []);
+
   const handleCreateEvent = async () => {
     if (!selectedCity) {
       return;
@@ -243,7 +400,7 @@ export function CreateMissionScreen() {
       setEventDescription('');
       setSelectedCity(null);
       setIsCreateEventOpen(false);
-      setIsEventMenuOpen(false);
+      setIsMissionMenuOpen(false);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'No se pudo crear el evento.';
       setSubmitError(`No se pudo crear el evento. ${errorMessage}`);
@@ -254,173 +411,315 @@ export function CreateMissionScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#dce9f5]'>
-      <View className='px-4 pb-3 pt-3'>
-        <Text className='text-2xl font-extrabold text-[#16325d]'>Gestion de eventos</Text>
-        <Text className='mt-1 text-sm text-[#4d648a]'>
-          Mapa OpenStreetMap para crear y monitorear eventos y puntos de recogida.
-        </Text>
+      <View className='flex-1 px-3 pb-3 pt-3'>
+        <View className='mb-3 flex-row items-center justify-between rounded-[28px] border border-[#d6e4fb] bg-white/90 px-4 py-3 shadow-[0_8px_22px_rgba(15,31,61,0.06)]'>
+          <View>
+            <Text className='mt-1 text-2xl font-extrabold text-[#16325d]'>
+              Bienvenido Organizador
+            </Text>
+            <Text className='mt-1 text-sm text-[#5a7190]'>
+              Gestiona eventos y mapa esde este panel.
+            </Text>
+          </View>
 
-        <View className='mt-4 flex-row items-center gap-2'>
-          <Pressable
-            className='h-12 w-12 items-center justify-center rounded-full bg-[#d63c4c]'
-            onPress={() => setIsEventMenuOpen((current) => !current)}
-          >
-            <MaterialIcons color='#fff' name='warning' size={22} />
-          </Pressable>
+          <View className='flex-row items-center gap-2 rounded-full bg-[#eef5ff] px-3 py-1.5'>
+            <View className='h-2.5 w-2.5 rounded-full bg-[#49c9ad]' />
+            <Text className='text-xs font-bold uppercase tracking-[0.22em] text-[#35537d]'>Sistema activo</Text>
+          </View>
         </View>
 
-        {isEventMenuOpen ? (
-          <View className='mt-3 rounded-2xl border border-[#d8e7ff] bg-white p-3'>
-            <Pressable
-              className='flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
-              onPress={() => {
-                setIsCreateEventOpen(true);
-                setIsEventMenuOpen(false);
-              }}
-            >
-              <MaterialIcons color='#2f68d8' name='warning-amber' size={20} />
-              <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Crear Evento (Desastre)</Text>
-            </Pressable>
+        <View className={`${isDesktop ? 'flex-row' : 'flex-col'} flex-1 gap-3`}>
+          <View className={`${isDesktop ? 'w-[250px]' : 'w-full'} rounded-[30px] border border-[#d6e3fb] bg-white px-4 py-5 shadow-[0_12px_26px_rgba(16,34,68,0.08)]`}>
+            <Text className='text-xs font-semibold uppercase tracking-[0.28em] text-[#6d7e9a]'>
+              Lastmile
+            </Text>
+            <Text className='mt-1 text-sm text-[#5a7190]'>
+              Panel principal del organizador para gestionar eventos, mapa y operaciones.
+            </Text>
+
+            <View className='mt-6'>
+              {navItems.map((item) => (
+                <SideNavItem key={item.id} {...item} onPress={(route) => router.push(route as never)} />
+              ))}
+            </View>
+
+            <View className='mt-6 rounded-2xl bg-[#f7fbff] px-4 py-4'>
+              <Text className='text-xs font-semibold uppercase tracking-[0.22em] text-[#6f7f9b]'>
+                Acciones
+              </Text>
+              <Pressable
+                className='mt-3 rounded-2xl bg-[#0a63ff] px-4 py-3 shadow-[0_10px_20px_rgba(10,99,255,0.22)]'
+                onPress={() => setIsMissionMenuOpen((current) => !current)}
+              >
+                <Text className='text-center text-sm font-semibold text-white'>Nueva misión</Text>
+              </Pressable>
+              {isMissionMenuOpen ? (
+                <View className='mt-3 rounded-2xl border border-[#d8e7ff] bg-white p-3'>
+                  <Pressable
+                    className='flex-row items-center rounded-xl bg-[#f4f8ff] px-3 py-3'
+                    onPress={() => {
+                      setIsCreateEventOpen(true);
+                      setIsMissionMenuOpen(false);
+                    }}
+                  >
+                    <MaterialIcons color='#2f68d8' name='warning-amber' size={20} />
+                    <Text className='ml-2 text-sm font-semibold text-[#1d3357]'>Crear Evento (Desastre)</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              <Text className='mt-3 text-xs leading-5 text-[#60738f]'>
+                Usa este acceso para ver las opciones de misión y abrir la acción que necesites.
+              </Text>
+            </View>
+
+            <View className='mt-5 rounded-2xl border border-[#e2ebf8] bg-[#fbfdff] px-4 py-4'>
+              <Text className='text-xs font-semibold uppercase tracking-[0.22em] text-[#6f7f9b]'>
+                Estado
+              </Text>
+              <Text className='mt-1 text-sm font-semibold text-[#17325b]'>
+                {myLocation ? 'Ubicación conectada' : 'Ubicación pendiente'}
+              </Text>
+              <Text className='mt-1 text-xs text-[#60738f]'>
+                {loadError || `${mappedEvents.length} eventos y ${mappedPickupPoints.length} puntos visibles.`}
+              </Text>
+            </View>
           </View>
-        ) : null}
 
-        {createdEventLabel ? (
-          <View className='mt-3 rounded-xl bg-[#183e80] px-4 py-3'>
-            <Text className='text-sm font-semibold text-white'>Evento creado: {createdEventLabel}</Text>
-          </View>
-        ) : null}
+          <View className={`${isDesktop ? 'flex-1' : 'w-full'} min-h-[760px] relative overflow-hidden rounded-[34px] border border-[#d2e1f8] bg-[#f6faff] shadow-[0_18px_42px_rgba(19,39,78,0.12)]`}>
+            <View className='absolute left-0 right-0 top-0 bottom-0' style={{ zIndex: 0 }}>
+              <MapContainer
+                center={mapCenter}
+                style={{ height: '100%', width: '100%' }}
+                zoom={6}
+              >
+                <RecenterMap
+                  commandId={centerCommandId}
+                  locateCommandId={locateCommandId}
+                  location={myLocation}
+                  onLocateFinished={(ok) => {
+                    setIsLocatingUser(false);
 
-        {loadError ? (
-          <View className='mt-3 rounded-xl bg-[#ffecef] px-3 py-2'>
-            <Text className='text-xs text-[#9f2238]'>{loadError}</Text>
-          </View>
-        ) : null}
-      </View>
+                    if (!ok) {
+                      setLocationActionError('No fue posible obtener tu ubicación. Verifica permisos del navegador.');
+                    }
+                  }}
+                  onLocationResolved={(location) => {
+                    setLocationActionError(null);
+                    setMyLocation(location);
+                  }}
+                />
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                />
 
-      <View className='mx-4 flex-1 overflow-hidden rounded-2xl border border-[#d3e2ff] bg-white'>
-        <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
-          <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-          />
+                {mappedEvents.map(({ event, city }) => (
+                  <CircleMarker
+                    center={[city.region.latitude, city.region.longitude]}
+                    key={`event-${event.id}`}
+                    pathOptions={{ color: '#e03b3b', fillColor: '#ff6b6b', fillOpacity: 0.92 }}
+                    radius={9}
+                  >
+                    <Popup>
+                      <strong>{event.name}</strong>
+                      <br />
+                      {event.description || 'Sin descripcion'}
+                      <br />
+                      {event.city}
+                    </Popup>
+                  </CircleMarker>
+                ))}
 
-          {mappedEvents.map(({ event, city }) => (
-            <CircleMarker
-              center={[city.region.latitude, city.region.longitude]}
-              key={`event-${event.id}`}
-              pathOptions={{ color: '#e03b3b', fillColor: '#ff6b6b', fillOpacity: 0.9 }}
-              radius={9}
+                {mappedPickupPoints.map(({ pickupPoint, latitude, longitude }) => (
+                  <CircleMarker
+                    center={[latitude, longitude]}
+                    key={`pickup-${pickupPoint.id}`}
+                    pathOptions={{ color: '#1f5fe0', fillColor: '#2a7fff', fillOpacity: 0.92 }}
+                    radius={8}
+                  >
+                    <Popup>
+                      <strong>Punto de recogida: {pickupPoint.name}</strong>
+                      <br />
+                      {pickupPoint.address}
+                      <br />
+                      {pickupPoint.city}
+                    </Popup>
+                  </CircleMarker>
+                ))}
+              </MapContainer>
+            </View>
+
+            <View className='absolute left-4 right-4 top-4 flex-row flex-wrap gap-3' style={{ pointerEvents: 'none', zIndex: 45 }}>
+              <SummaryPill label='GPS' value={myLocation ? 'Conectado' : 'Sin señal'} accent='#49c9ad' />
+              <SummaryPill label='Operaciones' value={`${mappedEvents.length} activas`} accent='#0a63ff' />
+              <SummaryPill label='Recogidas' value={`${mappedPickupPoints.length} puntos`} accent='#7a95c9' />
+              <SummaryPill label='Cobertura' value='Colombia' accent='#f5bb4c' />
+            </View>
+
+            <View
+              className='absolute left-4 bottom-4 rounded-2xl border border-[#d8e7fb] bg-white/95 px-4 py-3 shadow-[0_12px_28px_rgba(14,28,56,0.14)]'
+              style={{ pointerEvents: 'none', zIndex: 45 }}
             >
-              <Popup>
-                <strong>{event.name}</strong>
-                <br />
-                {event.description || 'Sin descripcion'}
-                <br />
-                {event.city}
-              </Popup>
-            </CircleMarker>
-          ))}
+              <View className='flex-row items-center gap-2'>
+                <View className='h-8 w-8 items-center justify-center rounded-full bg-[#eaf1ff]'>
+                  <MaterialIcons color='#1f5fe0' name='my-location' size={18} />
+                </View>
+                <View>
+                  <Text className='text-xs font-semibold uppercase tracking-[0.2em] text-[#6f7f9b]'>
+                    Estado del mapa
+                  </Text>
+                  <Text className='text-sm font-semibold text-[#16325d]'>
+                    {isLoadingEvents ? 'Cargando datos' : 'Vista lista para operar'}
+                  </Text>
+                </View>
+              </View>
+            </View>
 
-          {mappedPickupPoints.map(({ pickupPoint, latitude, longitude }) => (
-            <CircleMarker
-              center={[latitude, longitude]}
-              key={`pickup-${pickupPoint.id}`}
-              pathOptions={{ color: '#1f5fe0', fillColor: '#2a7fff', fillOpacity: 0.92 }}
-              radius={8}
-            >
-              <Popup>
-                <strong>Punto de recogida: {pickupPoint.name}</strong>
-                <br />
-                {pickupPoint.address}
-                <br />
-                {pickupPoint.city}
-              </Popup>
-            </CircleMarker>
-          ))}
-        </MapContainer>
+            <View className='absolute right-4 bottom-4' style={{ zIndex: 50 }}>
+              <Pressable
+                className={`rounded-2xl px-4 py-3 shadow-[0_10px_24px_rgba(10,99,255,0.28)] ${isLocatingUser ? 'bg-[#93aed8]' : 'bg-[#0a63ff]'}`}
+                disabled={isLocatingUser}
+                onPress={() => {
+                  if (isLocatingUser) {
+                    return;
+                  }
+
+                  if (myLocation) {
+                    centerMapOnLocation(myLocation);
+                    return;
+                  }
+
+                  requestUserLocation();
+                }}
+              >
+                <View className='flex-row items-center gap-2'>
+                  <View className='h-7 w-7 items-center justify-center rounded-full bg-white/20'>
+                    <MaterialIcons color='#ffffff' name='my-location' size={16} />
+                  </View>
+                  <Text className='text-sm font-semibold text-white'>
+                    {isLocatingUser ? 'Buscando...' : 'Mi ubicación'}
+                  </Text>
+                </View>
+              </Pressable>
+
+              {locationActionError ? (
+                <View className='mt-2 max-w-[280px] rounded-xl bg-[#fff4e6] px-3 py-2'>
+                  <Text className='text-xs text-[#9a6400]'>{locationActionError}</Text>
+                </View>
+              ) : null}
+            </View>
+
+          </View>
+        </View>
       </View>
 
       {isCreateEventOpen ? (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className='px-4'>
-          <View className='rounded-3xl border border-[#d5e3fb] bg-white px-5 py-5'>
-            <Text className='text-lg font-extrabold text-[#14243f]'>Crear Evento De Desastre Natural</Text>
+        <View
+          className='absolute left-0 right-0 top-0 bottom-0 items-center justify-center bg-[#0a1a35]/45 px-4 py-6'
+          style={{ zIndex: 120 }}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            className='w-full max-w-2xl'
+          >
+            <View className='max-h-[86vh] overflow-hidden rounded-[30px] border border-[#d5e3fb] bg-[#fbfdff]'>
+              <View className='flex-row items-center justify-between border-b border-[#e9f0fb] px-5 py-4'>
+                <Text className='text-lg font-extrabold text-[#14243f]'>Crear Evento de Desastre Natural</Text>
+                <Pressable
+                  className='h-9 w-9 items-center justify-center rounded-full bg-[#edf3ff]'
+                  onPress={() => {
+                    setIsCreateEventOpen(false);
+                    setIsCitySelectorOpen(false);
+                  }}
+                >
+                  <MaterialIcons color='#305c9d' name='close' size={20} />
+                </Pressable>
+              </View>
 
-            <Text className='mb-2 mt-4 text-sm font-semibold text-[#233b61]'>Nombre Del Evento</Text>
-            <TextInput
-              className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-              onChangeText={setEventName}
-              placeholder='Ej: Inundacion por lluvias intensas'
-              placeholderTextColor='#8ba2c3'
-              value={eventName}
-            />
+              <ScrollView className='px-5 py-4'>
+                <Text className='mb-2 text-sm font-semibold text-[#233b61]'>Nombre del evento</Text>
+                <TextInput
+                  className='rounded-xl border border-[#cfe0fb] bg-white px-4 py-3 text-[#13274a]'
+                  onChangeText={setEventName}
+                  placeholder='Ej: Inundación por lluvias intensas'
+                  placeholderTextColor='#8ba2c3'
+                  value={eventName}
+                />
 
-            <Text className='mb-2 mt-4 text-sm font-semibold text-[#233b61]'>Tipo De Desastre</Text>
-            <TextInput
-              className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-              onChangeText={setDisasterType}
-              placeholder='Ej: inundacion'
-              placeholderTextColor='#8ba2c3'
-              value={disasterType}
-            />
+                <Text className='mb-2 mt-4 text-sm font-semibold text-[#233b61]'>Tipo de desastre</Text>
+                <TextInput
+                  className='rounded-xl border border-[#cfe0fb] bg-white px-4 py-3 text-[#13274a]'
+                  onChangeText={setDisasterType}
+                  placeholder='Ej: inundacion'
+                  placeholderTextColor='#8ba2c3'
+                  value={disasterType}
+                />
 
-            <Text className='mb-2 mt-4 text-sm font-semibold text-[#233b61]'>Descripcion</Text>
-            <TextInput
-              className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3 text-[#13274a]'
-              multiline
-              numberOfLines={4}
-              onChangeText={setEventDescription}
-              placeholder='Describe el evento'
-              placeholderTextColor='#8ba2c3'
-              style={{ minHeight: 96, textAlignVertical: 'top' }}
-              value={eventDescription}
-            />
+                <Text className='mb-2 mt-4 text-sm font-semibold text-[#233b61]'>Descripción</Text>
+                <TextInput
+                  className='rounded-xl border border-[#cfe0fb] bg-white px-4 py-3 text-[#13274a]'
+                  multiline
+                  numberOfLines={4}
+                  onChangeText={setEventDescription}
+                  placeholder='Describe el evento'
+                  placeholderTextColor='#8ba2c3'
+                  style={{ minHeight: 96, textAlignVertical: 'top' }}
+                  value={eventDescription}
+                />
 
-            <Text className='mb-2 mt-4 text-sm font-semibold text-[#233b61]'>Ciudad</Text>
-            <Pressable
-              className='rounded-xl border border-[#cfe0fb] bg-[#f8fbff] px-4 py-3'
-              onPress={() => setIsCitySelectorOpen((current) => !current)}
-            >
-              <Text className='text-[#1b3357]'>
-                {selectedCity ? selectedCity.name : 'Selecciona una ciudad de Colombia'}
-              </Text>
-            </Pressable>
+                <Text className='mb-2 mt-4 text-sm font-semibold text-[#233b61]'>Ciudad</Text>
+                <Pressable
+                  className='rounded-xl border border-[#cfe0fb] bg-white px-4 py-3'
+                  onPress={() => setIsCitySelectorOpen((current) => !current)}
+                >
+                  <Text className='text-[#1b3357]'>
+                    {selectedCity ? selectedCity.name : 'Selecciona una ciudad de Colombia'}
+                  </Text>
+                </Pressable>
 
-            {isCitySelectorOpen ? (
-              <ScrollView className='mt-3 max-h-40 rounded-xl border border-[#d6e4fb] bg-[#fafdff]'>
-                {COLOMBIAN_CITIES.map((city) => (
+                {isCitySelectorOpen ? (
+                  <ScrollView className='mt-3 max-h-40 rounded-xl border border-[#d6e4fb] bg-[#fafdff]'>
+                    {COLOMBIAN_CITIES.map((city) => (
+                      <Pressable
+                        className='border-b border-[#e8effd] px-4 py-3'
+                        key={city.id}
+                        onPress={() => {
+                          setSelectedCity(city);
+                          setIsCitySelectorOpen(false);
+                        }}
+                      >
+                        <Text className='text-[#20375d]'>{city.name}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                ) : null}
+
+                {submitError ? <Text className='mt-3 text-sm text-[#c3324d]'>{submitError}</Text> : null}
+
+                <View className='mt-6 flex-row items-center justify-between gap-3 pb-2'>
                   <Pressable
-                    className='border-b border-[#e8effd] px-4 py-3'
-                    key={city.id}
+                    className='rounded-xl border border-[#d3def3] px-4 py-3'
                     onPress={() => {
-                      setSelectedCity(city);
+                      setIsCreateEventOpen(false);
                       setIsCitySelectorOpen(false);
                     }}
                   >
-                    <Text className='text-[#20375d]'>{city.name}</Text>
+                    <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
                   </Pressable>
-                ))}
+
+                  <Pressable
+                    className={`rounded-xl px-5 py-3 ${canCreateEvent ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'}`}
+                    disabled={!canCreateEvent}
+                    onPress={handleCreateEvent}
+                  >
+                    <Text className='font-semibold text-white'>{isSubmitting ? 'Creando...' : 'Crear evento'}</Text>
+                  </Pressable>
+                </View>
               </ScrollView>
-            ) : null}
-
-            {submitError ? <Text className='mt-3 text-sm text-[#c3324d]'>{submitError}</Text> : null}
-
-            <View className='mt-6 flex-row items-center justify-between'>
-              <Pressable className='rounded-xl border border-[#d3def3] px-4 py-3' onPress={() => setIsCreateEventOpen(false)}>
-                <Text className='font-semibold text-[#3a5176]'>Cancelar</Text>
-              </Pressable>
-              <Pressable
-                className={`rounded-xl px-5 py-3 ${canCreateEvent ? 'bg-[#1f5fe0]' : 'bg-[#9db8e5]'}`}
-                disabled={!canCreateEvent}
-                onPress={handleCreateEvent}
-              >
-                <Text className='font-semibold text-white'>{isSubmitting ? 'Creando...' : 'Crear Evento'}</Text>
-              </Pressable>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       ) : null}
-
-      <OrganizerBottomTabs activeTab='inicio' />
     </SafeAreaView>
   );
 }

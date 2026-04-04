@@ -3,7 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
-import { ActivityIndicator, Pressable, SafeAreaView, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, SafeAreaView, Text, View } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
 
 import {
@@ -11,7 +11,7 @@ import {
   type ColombianCity,
 } from '@/modules/missions/constants/colombianCities';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
+import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 
 const COLOMBIA_REGION: Region = {
@@ -30,6 +30,8 @@ export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
   const isVolunteer = currentUser?.role === 'volunteer';
+  const isWeb = Platform.OS === 'web';
+  const webPanelInset = isVolunteer && isWeb ? VOLUNTEER_WEB_PANEL_OFFSET : (isDonor && isWeb ? 250 : 0);
   const hasWelcomeBanner = isDonor || isVolunteer;
   const [showDonorWelcome, setShowDonorWelcome] = useState(true);
   const donorWelcomeTop = 12;
@@ -189,12 +191,27 @@ export function MapScreen() {
     );
   };
 
+  if (isDonor && isWeb) {
+    return (
+      <View className='flex-1 bg-[#eaf2ff]'>
+        <View style={{ flex: 1, paddingLeft: webPanelInset }}>
+          <View
+            className={`flex-1 overflow-hidden border-0`}
+          >
+            {/* ...existing code... */}
+          </View>
+        </View>
+        <DonorBottomTabs activeTab='inicio' />
+      </View>
+    );
+  }
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
-      <View
-        className={`flex-1 overflow-hidden ${
-          isDonor ? 'border-0' : 'rounded-t-3xl border border-[#d3e2ff]'
-        }`}
+      <View style={{ flex: 1, paddingLeft: webPanelInset }}>
+        <View
+          className={`flex-1 overflow-hidden ${
+            isDonor ? 'border-0' : 'rounded-t-3xl border border-[#d3e2ff]'
+          }`}
       >
         <MapView
           initialRegion={COLOMBIA_REGION}
@@ -295,8 +312,10 @@ export function MapScreen() {
           </View>
         ) : null}
       </View>
+      </View>
 
       {isDonor ? <DonorBottomTabs activeTab='inicio' /> : null}
+      {isVolunteer && isWeb ? <DonorBottomTabs activeTab='mapa' /> : null}
     </SafeAreaView>
   );
 }
