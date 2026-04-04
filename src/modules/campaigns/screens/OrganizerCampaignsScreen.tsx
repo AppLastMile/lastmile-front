@@ -10,6 +10,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
@@ -30,7 +31,10 @@ import {
 import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
 import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
 import { addNotification } from '@/modules/notifications/state/notificationsStore';
-import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
+import {
+  OrganizerBottomTabs,
+  ORGANIZER_WEB_PANEL_OFFSET,
+} from '@/modules/organizer/components/OrganizerBottomTabs';
 import { type Campaign, createCampaign, getCampaigns } from '@/services/api/campaignsService';
 import { getItemDonations, type ItemDonationResponse } from '@/services/api/donationsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
@@ -47,6 +51,10 @@ import { getUsers, type UserSummary } from '@/services/api/usersService';
 const DEFAULT_CREATED_BY = 1;
 
 export function OrganizerCampaignsScreen() {
+  const organizerWebInset = Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
+  const isWeb = Platform.OS === 'web';
+  const isMobileLayout = !isWeb;
+  const { width } = useWindowDimensions();
   const { currentUser } = useAuthSession();
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -223,6 +231,45 @@ export function OrganizerCampaignsScreen() {
     () => campaigns.find((campaignItem) => campaignItem.id === chatCampaignId) ?? null,
     [campaigns, chatCampaignId]
   );
+
+  const campaignTotals = useMemo(() => {
+    const totalCollected = campaigns.reduce((sum, campaignItem) => sum + campaignItem.collectedMoney, 0);
+    const totalGoal = campaigns.reduce((sum, campaignItem) => sum + campaignItem.goalMoney, 0);
+    const closedCount = campaigns.filter((campaignItem) => getProgress(campaignItem) >= 100).length;
+
+    return {
+      totalCollected,
+      totalGoal,
+      closedCount,
+    };
+  }, [campaigns, getProgress]);
+
+  const webGridGap = 12;
+
+  const webContentWidth = useMemo(() => {
+    if (!isWeb) {
+      return width;
+    }
+
+    return Math.max(980, width - organizerWebInset - 44);
+  }, [isWeb, organizerWebInset, width]);
+
+  const webCampaignColumns = useMemo(() => {
+    if (!isWeb) {
+      return 1;
+    }
+
+    return 3;
+  }, [isWeb, webContentWidth]);
+
+  const campaignCardWidth = useMemo(() => {
+    if (!isWeb) {
+      return undefined;
+    }
+
+    const available = webContentWidth - webGridGap * (webCampaignColumns - 1);
+    return Math.max(300, Math.floor(available / webCampaignColumns));
+  }, [isWeb, webCampaignColumns, webContentWidth]);
 
   const chatMessages = chatCampaignId ? chatByCampaign[chatCampaignId] ?? [] : [];
   const { notifications, unreadCount, toastMessage, markAllAsRead } = useRealtimeNotifications({
@@ -480,7 +527,21 @@ export function OrganizerCampaignsScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eef4ff]'>
-      <View className='flex-1 px-4 pt-4'>
+      <View className='flex-1' style={{ paddingLeft: organizerWebInset }}>
+      <View
+        className='relative flex-1 px-4 pt-4'
+        style={
+          isWeb
+            ? {
+                alignSelf: 'center',
+                width: '100%',
+                maxWidth: 1760,
+                paddingHorizontal: 16,
+                paddingTop: 18,
+              }
+            : undefined
+        }
+      >
         <View className='mb-1 flex-row items-center justify-between'>
           <View className='flex-row items-center'>
             <View
@@ -513,23 +574,70 @@ export function OrganizerCampaignsScreen() {
 
         <View className='mt-3 flex-row items-center justify-between'>
           <Text className='text-sm font-semibold text-[#2a456e]'>Total: {campaigns.length}</Text>
+          {isWeb ? (
+            <Pressable
+              className='rounded-xl bg-[#1f5fe0] px-5 py-3 active:opacity-90'
+              onPress={handleOpenCreate}
+              style={{
+                shadowColor: '#1f5fe0',
+                shadowOpacity: 0.22,
+                shadowOffset: { width: 0, height: 8 },
+                shadowRadius: 14,
+                elevation: 6,
+              }}
+            >
+              <Text className='text-center text-sm font-extrabold tracking-[0.2px] text-white'>
+                Crear campaña
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
-        <Pressable
-          className='mt-3 rounded-2xl bg-[#1f5fe0] px-5 py-4 active:opacity-90'
-          onPress={handleOpenCreate}
-          style={{
-            shadowColor: '#1f5fe0',
-            shadowOpacity: 0.25,
-            shadowOffset: { width: 0, height: 8 },
-            shadowRadius: 14,
-            elevation: 6,
-          }}
-        >
-          <Text className='text-center text-base font-extrabold tracking-[0.3px] text-white'>
-            Crear campaña
-          </Text>
-        </Pressable>
+        {isMobileLayout ? (
+          <Pressable
+            className='mt-3 rounded-2xl bg-[#1f5fe0] px-5 py-4 active:opacity-90'
+            onPress={handleOpenCreate}
+            style={{
+              shadowColor: '#1f5fe0',
+              shadowOpacity: 0.25,
+              shadowOffset: { width: 0, height: 8 },
+              shadowRadius: 14,
+              elevation: 6,
+            }}
+          >
+            <Text className='text-center text-base font-extrabold tracking-[0.3px] text-white'>
+              Crear campaña
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {isWeb ? (
+          <View className='mt-4 flex-row gap-3'>
+            <View className='flex-[1.6] rounded-2xl border border-[#d8e6ff] bg-white px-5 py-4'>
+              <Text className='text-[11px] font-semibold uppercase tracking-[0.18em] text-[#5f7da7]'>
+                Total posible al cierre
+              </Text>
+              <Text className='mt-1 text-4xl font-extrabold text-[#13274d]'>
+                {campaignTotals.totalGoal.toLocaleString('es-CO')}
+                <Text className='text-xl font-semibold text-[#8ea4c6]'> COP</Text>
+              </Text>
+              <Text className='mt-2 text-xs font-semibold text-[#6d82a5]'>
+                Meta acumulada si todas las campañas llegan a cerrarse.
+              </Text>
+            </View>
+            <View className='flex-[1] rounded-2xl bg-[#1f5fe0] px-5 py-4'>
+              <Text className='text-[11px] font-semibold uppercase tracking-[0.18em] text-[#c8dcff]'>
+                Total recaudado
+              </Text>
+              <Text className='mt-1 text-3xl font-extrabold text-white'>
+                {formatMoney(campaignTotals.totalCollected)}
+              </Text>
+              <Text className='mt-2 text-xs font-semibold text-[#d6e6ff]'>
+                {campaignTotals.closedCount} campañas ya cerradas por meta alcanzada
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {isLoading ? (
           <View className='mt-6 items-center'>
@@ -549,7 +657,22 @@ export function OrganizerCampaignsScreen() {
           </Text>
         ) : null}
 
-        <ScrollView className='mt-4' contentContainerStyle={{ gap: 12, paddingBottom: 120 }}>
+        <ScrollView
+          className='mt-4'
+          contentContainerStyle={{
+            gap: webGridGap,
+            paddingBottom: Platform.OS === 'web' ? 24 : 120,
+            ...(isWeb
+              ? {
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  alignItems: 'flex-start',
+                  justifyContent: 'flex-start',
+                  width: '100%',
+                }
+              : null),
+          }}
+        >
           {campaigns.map((campaignItem, index) => {
             const eventInfo = eventsById.get(campaignItem.eventId);
             const progress =
@@ -569,6 +692,21 @@ export function OrganizerCampaignsScreen() {
                 className='relative overflow-hidden rounded-2xl border border-[#d8e6ff] bg-white p-4'
                 entering={FadeInUp.delay(index * 45).duration(240)}
                 key={campaignItem.id}
+                style={
+                  isWeb
+                    ? {
+                        flexGrow: 1,
+                        flexBasis: 0,
+                        minWidth: campaignCardWidth,
+                        minHeight: 300,
+                        shadowColor: '#163457',
+                        shadowOpacity: 0.08,
+                        shadowOffset: { width: 0, height: 6 },
+                        shadowRadius: 14,
+                        elevation: 4,
+                      }
+                    : undefined
+                }
               >
                 {isClosed ? (
                   <View className='absolute inset-0 z-10 items-center justify-center bg-[#6b7280cc] px-4'>
@@ -578,6 +716,9 @@ export function OrganizerCampaignsScreen() {
                       </Text>
                       <Text className='mt-1 text-center text-lg font-extrabold text-[#16325d]'>
                         Meta alcanzada
+                      </Text>
+                      <Text className='mt-2 text-center text-sm font-semibold text-[#1f4fa7]'>
+                        Recaudado: {formatMoney(campaignItem.collectedMoney)}
                       </Text>
                       <Text className='mt-2 text-center text-sm text-[#4d648a]'>
                         Esta campaña llegó al $100\%$ de su objetivo y quedó cerrada para nuevos aportes.
@@ -651,6 +792,7 @@ export function OrganizerCampaignsScreen() {
             <Text className='text-sm text-[#5d7498]'>Aun no hay campanas creadas.</Text>
           ) : null}
         </ScrollView>
+      </View>
       </View>
 
       <Modal animationType='slide' transparent visible={isCreateOpen}>
@@ -755,6 +897,7 @@ export function OrganizerCampaignsScreen() {
       <CampaignChatModal
         campaignName={chatCampaign?.name}
         draft={chatDraft}
+        inlineOnWeb
         messages={chatMessages}
         onChangeDraft={setChatDraft}
         onClose={() => setChatCampaignId(null)}
