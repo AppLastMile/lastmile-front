@@ -2,6 +2,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -149,11 +150,16 @@ function getNormalizedShipmentStatus(shipment: Shipment) {
 }
 
 function PickupPointCard({ point, event, bgColor }: Readonly<{ point: PickupPoint; event: EventSummary | undefined; bgColor: string }>) {
+  const isWebCard = Platform.OS === 'web';
+  const pickupImageSource = {
+    uri: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80',
+  };
+
   return (
     <View
       style={{
-        width: 180,
-        marginRight: 14,
+        width: isWebCard ? 248 : 180,
+        marginRight: isWebCard ? 16 : 14,
         borderRadius: 20,
         backgroundColor: '#fff',
         overflow: 'hidden',
@@ -164,12 +170,27 @@ function PickupPointCard({ point, event, bgColor }: Readonly<{ point: PickupPoin
         elevation: 5,
       }}
     >
-      <View style={{ height: 130, backgroundColor: bgColor, alignItems: 'center', justifyContent: 'center' }}>
-        <FontAwesome5 color='rgba(255,255,255,0.7)' name='warehouse' size={44} />
+      <ImageBackground
+        source={pickupImageSource}
+        resizeMode='cover'
+        style={{ height: isWebCard ? 156 : 136, alignItems: 'center', justifyContent: 'center' }}
+        imageStyle={{ transform: [{ scale: 1.02 }] }}
+      >
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            backgroundColor: '#0a1f3f1f',
+          }}
+        />
+        <FontAwesome5 color='rgba(255,255,255,0.92)' name='warehouse' size={38} />
         <View style={{ position: 'absolute', top: 10, right: 10, backgroundColor: '#16a34a', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
           <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 }}>ACTIVO</Text>
         </View>
-      </View>
+      </ImageBackground>
       <View style={{ padding: 12 }}>
         <Text style={{ fontSize: 15, fontWeight: '800', color: '#111f3c' }} numberOfLines={1}>{point.name}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5 }}>
@@ -227,17 +248,19 @@ function VolunteerCard({
   volunteer,
   onAssign,
   isAssigning,
+  isWeb,
 }: Readonly<{
   volunteer: UserSummary;
   onAssign: (volunteer: UserSummary) => void;
   isAssigning: boolean;
+  isWeb: boolean;
 }>) {
   const volunteerName = volunteer.fullName ?? volunteer.name ?? 'Sin nombre';
 
   return (
     <View
       style={{
-        width: '48%',
+        width: isWeb ? '31.5%' : '48%',
         backgroundColor: '#fff',
         borderRadius: 20,
         padding: 16,
@@ -271,6 +294,7 @@ function VolunteerCard({
 export function OrganizerLogisticsScreen() {
   const { currentUser, logout } = useAuthSession();
   const organizerWebInset = Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
+  const isWeb = Platform.OS === 'web';
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -636,67 +660,141 @@ export function OrganizerLogisticsScreen() {
   };
 
   const inTransitCount = shipments.filter((s) => s.status === 'in_transit').length;
+  const activeShipmentsCount = shipments.filter((shipment) => {
+    const status = getNormalizedShipmentStatus(shipment);
+    return status === 'pending' || status === 'assigned' || status === 'in_transit';
+  }).length;
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
       <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: Platform.OS === 'web' ? 24 : 120 }}
+        contentContainerStyle={{
+          paddingBottom: isWeb ? 24 : 120,
+          paddingHorizontal: isWeb ? 16 : 0,
+        }}
         showsVerticalScrollIndicator={false}
       >
+        <View
+          style={{
+            width: '100%',
+            maxWidth: isWeb ? 1760 : undefined,
+            alignSelf: 'center',
+            paddingTop: isWeb ? 8 : 0,
+          }}
+        >
 
         {/* ── Header ── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: isWeb ? 12 : 20, paddingTop: 16, paddingBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ backgroundColor: '#dce8ff', borderRadius: 16, padding: 12, marginRight: 12 }}>
               <FontAwesome5 color='#1e73fa' name='truck' size={22} />
             </View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Logística</Text>
+            <View>
+              <Text style={{ fontSize: 24, fontWeight: '900', color: '#111f3c' }}>Logística</Text>
+              {isWeb ? (
+                <Text style={{ marginTop: 2, fontSize: 12, color: '#6c7f9d' }}>
+                  Panel operativo de distribución y asignación
+                </Text>
+              ) : null}
+            </View>
           </View>
           <Pressable style={{ backgroundColor: '#ebebeb', borderRadius: 16, padding: 12 }}>
             <FontAwesome5 color='#555' name='bell' size={20} />
           </Pressable>
         </View>
 
-        {/* ── Nuevo punto de recogida ── */}
-        <Pressable
-          onPress={() => setIsCreatePickupOpen((current) => !current)}
-          style={{
-            marginHorizontal: 20,
-            marginBottom: 22,
-            backgroundColor: '#1e73fa',
-            borderRadius: 18,
-            paddingVertical: 18,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <FontAwesome5 color='#fff' name='map-marker-alt' size={18} style={{ marginRight: 10 }} />
-          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>Nuevo punto de recogida</Text>
-        </Pressable>
+        {isWeb ? (
+          <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 12, marginBottom: 12 }}>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: '#fff',
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                borderLeftWidth: 3,
+                borderLeftColor: '#2563eb',
+              }}
+            >
+              <Text style={{ fontSize: 11, color: '#7c8ba3', fontWeight: '700' }}>ENTREGAS ACTIVAS</Text>
+              <Text style={{ marginTop: 2, fontSize: 23, fontWeight: '900', color: '#11284d' }}>
+                {activeShipmentsCount}
+              </Text>
+            </View>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: '#fff',
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                borderLeftWidth: 3,
+                borderLeftColor: '#06b6d4',
+              }}
+            >
+              <Text style={{ fontSize: 11, color: '#7c8ba3', fontWeight: '700' }}>VOLUNTARIOS DISPONIBLES</Text>
+              <Text style={{ marginTop: 2, fontSize: 23, fontWeight: '900', color: '#11284d' }}>
+                {volunteers.length}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
-        <Pressable
-          onPress={() => setIsCreateShipmentOpen((current) => !current)}
+        {/* ── Nuevo punto de recogida ── */}
+        <View
           style={{
-            marginHorizontal: 20,
+            flexDirection: isWeb ? 'row' : 'column',
+            gap: 12,
+            paddingHorizontal: isWeb ? 12 : 20,
             marginBottom: 18,
-            backgroundColor: '#0d8383',
-            borderRadius: 18,
-            paddingVertical: 16,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
           }}
         >
-          <FontAwesome5 color='#fff' name='box-open' size={17} style={{ marginRight: 10 }} />
-          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Nuevo envío</Text>
-        </Pressable>
+          <Pressable
+            onPress={() => setIsCreatePickupOpen((current) => !current)}
+            style={{
+              flex: 1,
+              backgroundColor: '#1e73fa',
+              borderRadius: 18,
+              paddingVertical: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: isWeb ? '#1e73fa' : undefined,
+              shadowOpacity: isWeb ? 0.2 : undefined,
+              shadowOffset: isWeb ? { width: 0, height: 6 } : undefined,
+              shadowRadius: isWeb ? 14 : undefined,
+            }}
+          >
+            <FontAwesome5 color='#fff' name='map-marker-alt' size={18} style={{ marginRight: 10 }} />
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Nuevo punto de recogida</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setIsCreateShipmentOpen((current) => !current)}
+            style={{
+              flex: 1,
+              backgroundColor: '#0d8383',
+              borderRadius: 18,
+              paddingVertical: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: isWeb ? '#0d8383' : undefined,
+              shadowOpacity: isWeb ? 0.18 : undefined,
+              shadowOffset: isWeb ? { width: 0, height: 6 } : undefined,
+              shadowRadius: isWeb ? 14 : undefined,
+            }}
+          >
+            <FontAwesome5 color='#fff' name='box-open' size={17} style={{ marginRight: 10 }} />
+            <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>Nuevo envío</Text>
+          </Pressable>
+        </View>
 
         {isCreateShipmentOpen ? (
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ marginHorizontal: 20, marginBottom: 20, backgroundColor: '#fff', borderRadius: 24, padding: 20, shadowColor: '#163457', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 6 }, shadowRadius: 14, elevation: 4 }}
+            style={{ marginHorizontal: isWeb ? 12 : 20, marginBottom: 20, backgroundColor: '#fff', borderRadius: 24, padding: 20, shadowColor: '#163457', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 6 }, shadowRadius: 14, elevation: 4 }}
           >
             <Text style={{ fontSize: 16, fontWeight: '800', color: '#19335f', marginBottom: 8 }}>Crear envío</Text>
             <Text style={{ fontSize: 12, color: '#60779a', marginBottom: 12 }}>
@@ -785,7 +883,7 @@ export function OrganizerLogisticsScreen() {
         {isCreatePickupOpen ? (
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ marginHorizontal: 20, marginBottom: 20, backgroundColor: '#fff', borderRadius: 24, padding: 20, shadowColor: '#163457', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 6 }, shadowRadius: 14, elevation: 4 }}
+            style={{ marginHorizontal: isWeb ? 12 : 20, marginBottom: 20, backgroundColor: '#fff', borderRadius: 24, padding: 20, shadowColor: '#163457', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 6 }, shadowRadius: 14, elevation: 4 }}
           >
             <Text style={{ fontSize: 16, fontWeight: '800', color: '#19335f', marginBottom: 4 }}>Crear punto de recogida</Text>
 
@@ -873,28 +971,28 @@ export function OrganizerLogisticsScreen() {
 
         {/* ── Loading / Error ── */}
         {isLoading ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: isWeb ? 12 : 20, marginBottom: 12 }}>
             <ActivityIndicator color='#1e73fa' size='small' />
             <Text style={{ marginLeft: 8, fontSize: 13, color: '#50698e' }}>Cargando logistica...</Text>
           </View>
         ) : null}
 
         {loadError ? (
-          <View style={{ marginHorizontal: 20, marginBottom: 12, backgroundColor: '#ffecef', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 }}>
+          <View style={{ marginHorizontal: isWeb ? 12 : 20, marginBottom: 12, backgroundColor: '#ffecef', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 }}>
             <Text style={{ fontSize: 13, color: '#a0253c' }}>{loadError}</Text>
           </View>
         ) : null}
 
         {/* ── Puntos de recogida ── */}
-        <View style={{ marginBottom: 24 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 14 }}>
+        <View style={{ marginBottom: 24, marginHorizontal: isWeb ? 12 : 0, backgroundColor: isWeb ? '#fff' : 'transparent', borderRadius: isWeb ? 22 : 0, paddingVertical: isWeb ? 16 : 0, paddingHorizontal: isWeb ? 14 : 0, borderWidth: isWeb ? 1 : 0, borderColor: '#e7eef9' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: isWeb ? 0 : 20, marginBottom: 14 }}>
             <Text style={{ fontSize: 20, fontWeight: '900', color: '#111f3c' }}>Puntos de recogida</Text>
             <Pressable onPress={loadData}>
               <Text style={{ fontSize: 15, fontWeight: '700', color: '#1e73fa' }}>Ver todos</Text>
             </Pressable>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: isWeb ? 0 : 20 }}>
             {pickupPoints.length === 0 ? (
               <View style={{ justifyContent: 'center', paddingVertical: 20 }}>
                 <Text style={{ fontSize: 14, color: '#9ca3af' }}>Sin puntos registrados</Text>
@@ -911,7 +1009,8 @@ export function OrganizerLogisticsScreen() {
         </View>
 
         {/* ── Envíos registrados ── */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
+        <View style={{ paddingHorizontal: isWeb ? 12 : 20, marginBottom: 24 }}>
+          <View style={{ backgroundColor: isWeb ? '#fff' : 'transparent', borderRadius: isWeb ? 22 : 0, borderWidth: isWeb ? 1 : 0, borderColor: '#e7eef9', paddingHorizontal: isWeb ? 14 : 0, paddingVertical: isWeb ? 16 : 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <Text style={{ fontSize: 20, fontWeight: '900', color: '#111f3c' }}>Envíos registrados</Text>
             {inTransitCount > 0 ? (
@@ -926,10 +1025,12 @@ export function OrganizerLogisticsScreen() {
           ) : (
             shipments.map((shipment) => <ShipmentRow key={shipment.id} shipment={shipment} />)
           )}
+          </View>
         </View>
 
         {/* ── Voluntarios disponibles ── */}
-        <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
+        <View style={{ paddingHorizontal: isWeb ? 12 : 20, marginBottom: 24 }}>
+          <View style={{ backgroundColor: isWeb ? '#fff' : 'transparent', borderRadius: isWeb ? 22 : 0, borderWidth: isWeb ? 1 : 0, borderColor: '#e7eef9', paddingHorizontal: isWeb ? 14 : 0, paddingVertical: isWeb ? 16 : 0 }}>
           <Text style={{ fontSize: 20, fontWeight: '900', color: '#111f3c', marginBottom: 14 }}>Voluntarios disponibles</Text>
 
           {volunteers.length === 0 ? (
@@ -942,6 +1043,7 @@ export function OrganizerLogisticsScreen() {
                   volunteer={volunteer}
                   onAssign={handleOpenAssignment}
                   isAssigning={isAssigningVolunteer && selectedVolunteerForAssignment?.id === volunteer.id}
+                  isWeb={isWeb}
                 />
               ))}
             </View>
@@ -1026,8 +1128,10 @@ export function OrganizerLogisticsScreen() {
               {assignmentFeedback}
             </Text>
           ) : null}
+          </View>
         </View>
 
+      </View>
       </ScrollView>
       </View>
 
