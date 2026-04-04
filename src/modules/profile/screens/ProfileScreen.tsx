@@ -1,10 +1,13 @@
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
-import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
+import {
+  OrganizerBottomTabs,
+  ORGANIZER_WEB_PANEL_OFFSET,
+} from '@/modules/organizer/components/OrganizerBottomTabs';
 
 function getRoleLabel(role?: string) {
   if (role === 'organizer') {
@@ -28,6 +31,16 @@ export function ProfileScreen() {
   const isOrganizer = currentUser?.role === 'organizer';
   const isDonor = currentUser?.role === 'donor';
   const hasBottomTabs = isOrganizer || isDonor;
+  const organizerWebInset = isOrganizer && Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
+  let contentBottomInset = 24;
+
+  if (hasBottomTabs) {
+    contentBottomInset = 120;
+  }
+
+  if (isOrganizer && Platform.OS === 'web') {
+    contentBottomInset = 24;
+  }
 
   const handleLogout = () => {
     logout();
@@ -36,7 +49,8 @@ export function ProfileScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: hasBottomTabs ? 120 : 24 }}>
+      <View className='flex-1' style={{ paddingLeft: organizerWebInset }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: contentBottomInset }}>
         <View className='rounded-2xl border border-[#d8e7ff] bg-white px-5 py-6'>
           <View className='flex-row items-start justify-between'>
             <View className='flex-1 pr-3'>
@@ -71,6 +85,7 @@ export function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
+      </View>
 
       {isOrganizer ? <OrganizerBottomTabs activeTab='perfil' /> : null}
       {isDonor ? <DonorBottomTabs activeTab='perfil' /> : null}

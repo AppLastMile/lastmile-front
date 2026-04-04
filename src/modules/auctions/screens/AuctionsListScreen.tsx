@@ -18,7 +18,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
-import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
+import {
+  OrganizerBottomTabs,
+  ORGANIZER_WEB_PANEL_OFFSET,
+} from '@/modules/organizer/components/OrganizerBottomTabs';
 import {
   type Auction,
   type AuctionBidMode,
@@ -101,6 +104,7 @@ export function AuctionsListScreen() {
   const { currentUser } = useAuthSession();
   const isOrganizer = currentUser?.role === 'organizer';
   const isDonor = currentUser?.role === 'donor';
+  const organizerWebInset = isOrganizer && Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
 
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -347,8 +351,9 @@ export function AuctionsListScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
+      <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={{ paddingBottom: isOrganizer && Platform.OS === 'web' ? 24 : 120 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -562,6 +567,7 @@ export function AuctionsListScreen() {
           </View>
         ) : null}
       </ScrollView>
+      </View>
 
       {/* ── Create auction modal (organizer only) ── */}
       <Modal animationType='slide' transparent visible={isOrganizer && isCreateOpen}>

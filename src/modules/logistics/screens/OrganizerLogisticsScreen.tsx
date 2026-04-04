@@ -16,7 +16,10 @@ import {
   COLOMBIAN_CITIES,
   type ColombianCity,
 } from '@/modules/missions/constants/colombianCities';
-import { OrganizerBottomTabs } from '@/modules/organizer/components/OrganizerBottomTabs';
+import {
+  OrganizerBottomTabs,
+  ORGANIZER_WEB_PANEL_OFFSET,
+} from '@/modules/organizer/components/OrganizerBottomTabs';
 import { type Campaign, getCampaigns } from '@/services/api/campaignsService';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 import {
@@ -267,6 +270,7 @@ function VolunteerCard({
 
 export function OrganizerLogisticsScreen() {
   const { currentUser, logout } = useAuthSession();
+  const organizerWebInset = Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -635,7 +639,11 @@ export function OrganizerLogisticsScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+      <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: Platform.OS === 'web' ? 24 : 120 }}
+        showsVerticalScrollIndicator={false}
+      >
 
         {/* ── Header ── */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 }}>
@@ -1021,6 +1029,7 @@ export function OrganizerLogisticsScreen() {
         </View>
 
       </ScrollView>
+      </View>
 
       <OrganizerBottomTabs activeTab='logistica' />
     </SafeAreaView>
