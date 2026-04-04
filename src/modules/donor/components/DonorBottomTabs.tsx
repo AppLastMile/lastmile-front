@@ -107,8 +107,10 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
   const isWeb = Platform.OS === 'web';
   const { currentUser } = useAuthSession();
   const isVolunteer = currentUser?.role === 'volunteer';
+  const isDonor = currentUser?.role === 'donor';
 
-  const tabs: Array<{
+  // Tabs para donor
+  const donorTabs: Array<{
     id: DonorTab;
     label: string;
     icon: React.ComponentProps<typeof FontAwesome5>['name'];
@@ -140,6 +142,7 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
     },
   ];
 
+  // Tabs para volunteer (ya existentes)
   const volunteerWebTabs: Array<{
     id: DonorTab;
     label: string;
@@ -178,8 +181,10 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
     },
   ];
 
-  if (isWeb && isVolunteer) {
-    const currentPageLabel = volunteerWebTabs.find((tab) => tab.id === activeTab)?.label ?? 'Inicio';
+  // Mostrar panel lateral izquierdo en web para donor y volunteer
+  if (isWeb && (isDonor || isVolunteer)) {
+    const currentTabs = isDonor ? donorTabs : volunteerWebTabs;
+    const currentPageLabel = currentTabs.find((tab) => tab.id === activeTab)?.label ?? 'Inicio';
 
     return (
       <View
@@ -203,7 +208,7 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
         </Text>
 
         <View className='mt-6'>
-          {volunteerWebTabs.map((tab) => (
+          {currentTabs.map((tab) => (
             <DonorSidebarButton
               key={tab.id}
               icon={tab.icon}
@@ -218,6 +223,7 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
     );
   }
 
+  // Panel inferior solo para móvil
   return (
     <View className='absolute left-0 right-0 z-50' style={{ bottom: Math.max(insets.bottom - 6, 6) }}>
       <View
@@ -231,7 +237,7 @@ export function DonorBottomTabs({ activeTab }: DonorBottomTabsProps) {
           elevation: 0,
         }}
       >
-        {tabs.map((tab) => (
+        {donorTabs.map((tab) => (
           <DonorTabButton
             key={tab.id}
             icon={tab.icon}
