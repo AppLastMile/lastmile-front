@@ -414,11 +414,11 @@ export function CreateMissionScreen() {
       <View className='flex-1 px-3 pb-3 pt-3'>
         <View className='mb-3 flex-row items-center justify-between rounded-[28px] border border-[#d6e4fb] bg-white/90 px-4 py-3 shadow-[0_8px_22px_rgba(15,31,61,0.06)]'>
           <View>
-            <Text className='text-xs font-semibold uppercase tracking-[0.28em] text-[#6e7f9d]'>
-              Gestión Lastmile
-            </Text>
             <Text className='mt-1 text-2xl font-extrabold text-[#16325d]'>
-              Panel de inicio del organizador
+              Bienvenido Organizador
+            </Text>
+            <Text className='mt-1 text-sm text-[#5a7190]'>
+              Gestiona eventos y mapa esde este panel.
             </Text>
           </View>
 
@@ -431,10 +431,10 @@ export function CreateMissionScreen() {
         <View className={`${isDesktop ? 'flex-row' : 'flex-col'} flex-1 gap-3`}>
           <View className={`${isDesktop ? 'w-[250px]' : 'w-full'} rounded-[30px] border border-[#d6e3fb] bg-white px-4 py-5 shadow-[0_12px_26px_rgba(16,34,68,0.08)]`}>
             <Text className='text-xs font-semibold uppercase tracking-[0.28em] text-[#6d7e9a]'>
-              Gestión Lastmile
+              Lastmile
             </Text>
             <Text className='mt-1 text-sm text-[#5a7190]'>
-              Operador de logística y coordinación de misiones.
+              Panel principal del organizador para gestionar eventos, mapa y operaciones.
             </Text>
 
             <View className='mt-6'>
