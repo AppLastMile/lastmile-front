@@ -3,7 +3,9 @@ import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
+import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
+import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
+import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
 import {
   OrganizerBottomTabs,
   ORGANIZER_WEB_PANEL_OFFSET,
@@ -30,17 +32,33 @@ export function ProfileScreen() {
   const { currentUser, logout } = useAuthSession();
   const isOrganizer = currentUser?.role === 'organizer';
   const isDonor = currentUser?.role === 'donor';
-  const hasBottomTabs = isOrganizer || isDonor;
-  const organizerWebInset = isOrganizer && Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
+  const isVolunteer = currentUser?.role === 'volunteer';
+  const isWeb = Platform.OS === 'web';
+  const hasBottomTabs = isOrganizer || isDonor || isVolunteer;
+  let organizerWebInset = 0;
+
+  if (isWeb) {
+    if (isOrganizer) {
+      organizerWebInset = ORGANIZER_WEB_PANEL_OFFSET;
+    } else if (isVolunteer) {
+      organizerWebInset = VOLUNTEER_WEB_PANEL_OFFSET;
+    }
+  }
   let contentBottomInset = 24;
 
   if (hasBottomTabs) {
     contentBottomInset = 120;
   }
 
-  if (isOrganizer && Platform.OS === 'web') {
+  if ((isOrganizer || isVolunteer) && isWeb) {
     contentBottomInset = 24;
   }
+
+  const { notifications, unreadCount, toastMessage, markAllAsRead } = useRealtimeNotifications({
+    userId: currentUser?.id,
+    role: currentUser?.role,
+    token: currentUser?.accessToken,
+  });
 
   const handleLogout = () => {
     logout();
@@ -51,14 +69,25 @@ export function ProfileScreen() {
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       <View className='flex-1' style={{ paddingLeft: organizerWebInset }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: contentBottomInset }}>
-        <View className='rounded-2xl border border-[#d8e7ff] bg-white px-5 py-6'>
-          <View className='flex-row items-start justify-between'>
+        <View
+          className='rounded-2xl border border-[#d8e7ff] bg-white px-5 py-6'
+          style={{ overflow: 'visible' }}
+        >
+          <View className='flex-row items-start justify-between' style={{ position: 'relative', zIndex: 1000, elevation: 1000 }}>
             <View className='flex-1 pr-3'>
               <Text className='text-2xl font-extrabold text-[#15325c]'>Perfil</Text>
               <Text className='mt-2 text-sm text-[#5b7190]'>
                 Bienvenido de nuevo, {getRoleLabel(currentUser?.role)}
               </Text>
             </View>
+            {isOrganizer || isVolunteer ? (
+              <NotificationsBell
+                notifications={notifications}
+                onMarkAllAsRead={markAllAsRead}
+                toastMessage={toastMessage}
+                unreadCount={unreadCount}
+              />
+            ) : null}
           </View>
 
           <View className='mt-5 rounded-2xl bg-[#f7faff] px-4 py-4'>
@@ -89,6 +118,7 @@ export function ProfileScreen() {
 
       {isOrganizer ? <OrganizerBottomTabs activeTab='perfil' /> : null}
       {isDonor ? <DonorBottomTabs activeTab='perfil' /> : null}
+      {isVolunteer && isWeb ? <DonorBottomTabs activeTab='perfil' /> : null}
     </SafeAreaView>
   );
 }
