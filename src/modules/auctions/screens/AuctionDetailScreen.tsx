@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
+import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import {
   OrganizerBottomTabs,
   ORGANIZER_WEB_PANEL_OFFSET,
@@ -198,11 +198,11 @@ function InfoRow({
   label,
   value,
   highlight = false,
-}: {
+}: Readonly<{
   label: string;
   value: string;
   highlight?: boolean;
-}) {
+}>) {
   return (
     <View
       style={{
@@ -234,7 +234,17 @@ export function AuctionDetailScreen() {
   const { currentUser } = useAuthSession();
   const isOrganizer = currentUser?.role === 'organizer';
   const isDonor = currentUser?.role === 'donor';
-  const organizerWebInset = isOrganizer && Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
+  const isVolunteer = currentUser?.role === 'volunteer';
+  let webPanelInset = 0;
+
+  if (Platform.OS === 'web') {
+    if (isOrganizer) {
+      webPanelInset = ORGANIZER_WEB_PANEL_OFFSET;
+    } else if (isVolunteer) {
+      webPanelInset = VOLUNTEER_WEB_PANEL_OFFSET;
+    }
+  }
+
   const isWeb = Platform.OS === 'web';
   const auctionId = Number(id);
 
@@ -623,17 +633,17 @@ export function AuctionDetailScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
-      <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
-      <View
-        style={{
-          flex: 1,
-          width: '100%',
-          maxWidth: isWeb ? 1760 : undefined,
-          alignSelf: 'center',
-          paddingHorizontal: isWeb ? 16 : 0,
-        }}
-      >
-      {/* ── Header ── */}
+      <View style={{ flex: 1, paddingLeft: webPanelInset }}>
+        <View
+          style={{
+            flex: 1,
+            width: '100%',
+            maxWidth: isWeb ? 1760 : undefined,
+            alignSelf: 'center',
+            paddingHorizontal: isWeb ? 16 : 0,
+          }}
+        >
+          {/* Header */}
       <View
         style={{
           flexDirection: 'row',
@@ -1167,7 +1177,7 @@ export function AuctionDetailScreen() {
       </View>
 
       {isOrganizer ? <OrganizerBottomTabs activeTab='subastas' /> : null}
-      {isDonor ? <DonorBottomTabs activeTab='subastas' /> : null}
+      {isDonor || isVolunteer ? <DonorBottomTabs activeTab='subastas' /> : null}
     </SafeAreaView>
   );
 }
