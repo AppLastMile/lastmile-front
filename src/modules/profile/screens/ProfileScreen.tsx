@@ -4,8 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
-import { NotificationsBell } from '@/modules/notifications/components/NotificationsBell';
-import { useRealtimeNotifications } from '@/modules/notifications/hooks/useRealtimeNotifications';
+
+
 import {
   OrganizerBottomTabs,
   ORGANIZER_WEB_PANEL_OFFSET,
@@ -54,11 +54,7 @@ export function ProfileScreen() {
     contentBottomInset = 24;
   }
 
-  const { notifications, unreadCount, toastMessage, markAllAsRead } = useRealtimeNotifications({
-    userId: currentUser?.id,
-    role: currentUser?.role,
-    token: currentUser?.accessToken,
-  });
+
 
   const handleLogout = () => {
     logout();
@@ -80,14 +76,7 @@ export function ProfileScreen() {
                 Bienvenido de nuevo, {getRoleLabel(currentUser?.role)}
               </Text>
             </View>
-            {isOrganizer || isVolunteer ? (
-              <NotificationsBell
-                notifications={notifications}
-                onMarkAllAsRead={markAllAsRead}
-                toastMessage={toastMessage}
-                unreadCount={unreadCount}
-              />
-            ) : null}
+            {/* Notificaciones eliminadas del perfil en web y móvil */}
           </View>
 
           <View className='mt-5 rounded-2xl bg-[#f7faff] px-4 py-4'>
