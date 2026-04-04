@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
-import { ActivityIndicator, SafeAreaView, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, SafeAreaView, Text, View } from 'react-native';
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -9,7 +9,7 @@ import {
   type ColombianCity,
 } from '@/modules/missions/constants/colombianCities';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
+import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
 
 type EventWithCity = {
@@ -23,6 +23,8 @@ export function MapScreen() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
   const isVolunteer = currentUser?.role === 'volunteer';
+  const isWeb = Platform.OS === 'web';
+  const webPanelInset = isVolunteer && isWeb ? VOLUNTEER_WEB_PANEL_OFFSET : 0;
   const hasWelcomeBanner = isDonor || isVolunteer;
   const [showDonorWelcome, setShowDonorWelcome] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
@@ -140,6 +142,7 @@ export function MapScreen() {
 
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
+      <View className='flex-1' style={{ paddingLeft: webPanelInset }}>
       <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
         <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
           <TileLayer
@@ -210,8 +213,10 @@ export function MapScreen() {
           </View>
         ) : null}
       </View>
+      </View>
 
       {isDonor ? <DonorBottomTabs activeTab='inicio' /> : null}
+      {isVolunteer && isWeb ? <DonorBottomTabs activeTab='mapa' /> : null}
     </SafeAreaView>
   );
 }
