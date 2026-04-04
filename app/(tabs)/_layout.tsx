@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Redirect, Tabs } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, Pressable, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
@@ -167,6 +167,8 @@ function CustomTabsBar({ state, descriptors, navigation }: Readonly<BottomTabBar
 export default function TabsLayout() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
+  const isVolunteer = currentUser?.role === 'volunteer';
+  const hideBottomTabs = isDonor || (isVolunteer && Platform.OS === 'web');
 
   if (!currentUser) {
     return <Redirect href='/(auth)/login' />;
@@ -174,7 +176,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
-      tabBar={(props) => (isDonor ? null : <CustomTabsBar {...props} />)}
+      tabBar={(props) => (hideBottomTabs ? null : <CustomTabsBar {...props} />)}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#0a84ff',
