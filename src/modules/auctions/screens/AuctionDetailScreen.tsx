@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -12,6 +13,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
+import {
+  OrganizerBottomTabs,
+  ORGANIZER_WEB_PANEL_OFFSET,
+} from '@/modules/organizer/components/OrganizerBottomTabs';
 import {
   type Auction,
   type AuctionBid,
@@ -226,6 +232,10 @@ export function AuctionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { currentUser } = useAuthSession();
+  const isOrganizer = currentUser?.role === 'organizer';
+  const isDonor = currentUser?.role === 'donor';
+  const organizerWebInset = isOrganizer && Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
+  const isWeb = Platform.OS === 'web';
   const auctionId = Number(id);
 
   const [auction, setAuction] = useState<Auction | null>(null);
@@ -613,6 +623,16 @@ export function AuctionDetailScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: '#f4f6fb' }}>
+      <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
+      <View
+        style={{
+          flex: 1,
+          width: '100%',
+          maxWidth: isWeb ? 1760 : undefined,
+          alignSelf: 'center',
+          paddingHorizontal: isWeb ? 16 : 0,
+        }}
+      >
       {/* ── Header ── */}
       <View
         style={{
@@ -1143,6 +1163,11 @@ export function AuctionDetailScreen() {
           </>
         ) : null}
       </ScrollView>
+      </View>
+      </View>
+
+      {isOrganizer ? <OrganizerBottomTabs activeTab='subastas' /> : null}
+      {isDonor ? <DonorBottomTabs activeTab='subastas' /> : null}
     </SafeAreaView>
   );
 }
