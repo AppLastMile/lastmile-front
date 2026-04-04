@@ -18,7 +18,7 @@ import Animated, { FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
-import { DonorBottomTabs } from '@/modules/donor/components/DonorBottomTabs';
+import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import {
   OrganizerBottomTabs,
   ORGANIZER_WEB_PANEL_OFFSET,
@@ -107,7 +107,16 @@ export function AuctionsListScreen() {
   const { width } = useWindowDimensions();
   const isOrganizer = currentUser?.role === 'organizer';
   const isDonor = currentUser?.role === 'donor';
-  const organizerWebInset = isOrganizer && Platform.OS === 'web' ? ORGANIZER_WEB_PANEL_OFFSET : 0;
+  const isVolunteer = currentUser?.role === 'volunteer';
+  let organizerWebInset = 0;
+
+  if (Platform.OS === 'web') {
+    if (isOrganizer) {
+      organizerWebInset = ORGANIZER_WEB_PANEL_OFFSET;
+    } else if (isVolunteer) {
+      organizerWebInset = VOLUNTEER_WEB_PANEL_OFFSET;
+    }
+  }
 
   const [auctions, setAuctions] = useState<Auction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -414,7 +423,7 @@ export function AuctionsListScreen() {
       <View style={{ flex: 1, paddingLeft: organizerWebInset }}>
       <ScrollView
         contentContainerStyle={{
-          paddingBottom: isOrganizer && isWeb ? 24 : 120,
+          paddingBottom: (isOrganizer || isVolunteer) && isWeb ? 24 : 120,
           paddingHorizontal: isWeb ? 16 : 0,
         }}
         showsVerticalScrollIndicator={false}
@@ -1064,6 +1073,7 @@ export function AuctionsListScreen() {
 
       {isOrganizer ? <OrganizerBottomTabs activeTab='subastas' /> : null}
       {isDonor ? <DonorBottomTabs activeTab='subastas' /> : null}
+      {isVolunteer && isWeb ? <DonorBottomTabs activeTab='subastas' /> : null}
     </SafeAreaView>
   );
 }
