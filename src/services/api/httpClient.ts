@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
+const DEFAULT_API_BASE_URL = 'http://localhost:3001';
 const EXPO_PUBLIC_API_URL = process.env.EXPO_PUBLIC_API_URL;
 const EXPO_PUBLIC_NETWORK_DEBUG = process.env.EXPO_PUBLIC_NETWORK_DEBUG;
 const BACKEND_CONNECTION_ERROR_MESSAGE =
@@ -58,6 +58,12 @@ function getBrowserHost() {
 }
 
 function resolveApiBaseUrl() {
+  // En web: siempre usar localhost, ignorar variables de entorno (que pueden ser ngrok)
+  if (Platform.OS === 'web') {
+    return DEFAULT_API_BASE_URL;
+  }
+
+  // En nativo: usar la variable de entorno (ngrok) o el default
   const configuredUrl = EXPO_PUBLIC_API_URL ?? DEFAULT_API_BASE_URL;
 
   try {
@@ -68,15 +74,7 @@ function resolveApiBaseUrl() {
       return configuredUrl;
     }
 
-    if (Platform.OS === 'web') {
-      const browserHost = getBrowserHost();
-
-      if (browserHost && browserHost !== 'localhost' && browserHost !== '127.0.0.1') {
-        parsed.hostname = browserHost;
-        return parsed.toString().replace(/\/$/, '');
-      }
-    }
-
+    // En nativo: resolver localhost a la IP del Expo host
     const expoHostIp = getExpoHostIp();
 
     if (expoHostIp) {
@@ -123,12 +121,20 @@ export async function httpClient<T>(
   let response: Response;
 
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    // En nativo, agregar header para ngrok
+    if (Platform.OS !== 'web' && Platform.OS !== 'android' && Platform.OS !== 'ios') {
+      headers['ngrok-skip-browser-warning'] = '69420';
+    }
+
     response = await fetch(requestUrl, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
