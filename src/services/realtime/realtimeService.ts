@@ -82,19 +82,42 @@ function getApiBaseUrl() {
 }
 
 function resolveWsBaseUrl() {
-  // En web: siempre usar localhost:3001, ignorar ngrok del .env
+  const envWsUrl = getEnvValue('EXPO_PUBLIC_WS_URL');
+
+  // En web: preferir la variable de entorno si está presente (por ejemplo ngrok),
+  // para permitir conexiones desde el navegador a una URL pública. Si no existe,
+  // mantener el fallback localhost para desarrollo local.
   if (Platform.OS === 'web') {
+    if (envWsUrl) {
+      try {
+        const parsed = new URL(envWsUrl);
+        // Keep WS origin host-only. Namespace and socket path are configured separately.
+        parsed.pathname = '';
+
+        const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+
+        if (isLocalhost) {
+          const browserHost = getBrowserHost();
+
+          if (browserHost) {
+            parsed.hostname = browserHost;
+          }
+        }
+
+        return parsed.toString().replace(/\/$/, '');
+      } catch {
+        return envWsUrl;
+      }
+    }
+
     return 'http://localhost:3001';
   }
 
   // En nativo: usar variable de entorno (ngrok) o default
-  const envWsUrl = getEnvValue('EXPO_PUBLIC_WS_URL');
 
   if (envWsUrl) {
     try {
       const parsed = new URL(envWsUrl);
-
-      // Keep WS origin host-only. Namespace and socket path are configured separately.
       parsed.pathname = '';
 
       const isLocalhost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
