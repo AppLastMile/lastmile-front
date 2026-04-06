@@ -6,6 +6,7 @@ import { Animated, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import { useVolunteerLocationBroadcast } from '@/services/realtime/useVolunteerLocationBroadcast';
 
 type TabIconProps = {
   focused: boolean;
@@ -164,6 +165,15 @@ function CustomTabsBar({ state, descriptors, navigation }: Readonly<BottomTabBar
   );
 }
 
+function VolunteerLocationBroadcaster() {
+  const { currentUser } = useAuthSession();
+  useVolunteerLocationBroadcast(
+    currentUser?.accessToken,
+    currentUser?.id,
+  );
+  return null;
+}
+
 export default function TabsLayout() {
   const { currentUser } = useAuthSession();
   const isDonor = currentUser?.role === 'donor';
@@ -175,6 +185,8 @@ export default function TabsLayout() {
   }
 
   return (
+    <>
+      {isVolunteer ? <VolunteerLocationBroadcaster /> : null}
     <Tabs
       tabBar={(props) => (hideBottomTabs ? null : <CustomTabsBar {...props} />)}
       screenOptions={{
@@ -234,5 +246,6 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }
