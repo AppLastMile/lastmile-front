@@ -240,7 +240,8 @@ export function AuctionDetailScreen() {
   if (Platform.OS === 'web') {
     if (isOrganizer) {
       webPanelInset = ORGANIZER_WEB_PANEL_OFFSET;
-    } else if (isVolunteer) {
+    } else if (isVolunteer || isDonor) {
+      // Donor and volunteer share the same left panel width on web.
       webPanelInset = VOLUNTEER_WEB_PANEL_OFFSET;
     }
   }
