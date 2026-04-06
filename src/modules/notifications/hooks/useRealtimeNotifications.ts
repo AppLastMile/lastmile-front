@@ -95,6 +95,32 @@ function unwrapEventPayload(payload: RealtimeEventCreatedPayload): RealtimeEvent
   return payload;
 }
 
+function translateNotificationMessage(rawMessage: string | undefined, auctionId: number | null) {
+  const msg = String(rawMessage ?? '').trim();
+  const lower = msg.toLowerCase();
+
+  // Auction-specific translations
+  if (auctionId !== null) {
+    const winPattern = /\b(won|you won|winner|won the auction|has won)\b/;
+    const losePattern = /\b(lost|you lost|lost the auction|outbid|has been outbid|you have been outbid)\b/;
+
+    if (winPattern.test(lower)) return 'Ganaste';
+    if (losePattern.test(lower)) return 'Perdiste';
+
+    // Generic auction/bid notifications
+    if (/\bbid\b|\bnew bid\b|placed a bid\b/.test(lower)) return 'Nueva puja';
+    if (/\bauction\b|\bnew auction\b/.test(lower)) return 'Subasta';
+  }
+
+  // General translations
+  if (/\bnew event\b|created a new event|has been created/.test(lower)) return 'Se ha creado un nuevo evento';
+  if (/\bnew message\b|new message in|message in campaign/.test(lower)) return msg.replace(/new message in campaign #?\d+:?\s*/i, '').trim() || 'Nuevo mensaje';
+  if (/\boutbid\b|you have been outbid/.test(lower)) return 'Has sido superado';
+
+  // If message already in Spanish or not recognized, return original trimmed
+  return msg;
+}
+
 export function useRealtimeNotifications({ userId, role, token }: UseRealtimeNotificationsArgs) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -168,6 +194,10 @@ export function useRealtimeNotifications({ userId, role, token }: UseRealtimeNot
       }
 
       const nextNotification = normalizeNotification(normalizedPayload);
+
+      // Traducir/normalizar mensajes que provengan en inglés u otros formatos.
+      nextNotification.message = translateNotificationMessage(nextNotification.message, nextNotification.auctionId ?? null);
+
       if (__DEV__) {
         // eslint-disable-next-line no-console
         console.log('[notifications] aceptada y agregada', nextNotification);
@@ -184,10 +214,12 @@ export function useRealtimeNotifications({ userId, role, token }: UseRealtimeNot
         return;
       }
 
+      const author = payload.authorName?.trim() || `Usuario ${payload.authorId ?? ''}`;
       const chatNotification: NotificationItem = {
         notificationId: Number(payload.id ?? Date.now()),
         userId: Number(payload.authorId ?? 0),
-        message: `Nuevo mensaje en campaña #${payload.campaignId}: ${payload.message}`,
+        // Mostrar quien escribió y el cuerpo del mensaje
+        message: `${author}: ${String(payload.message ?? '').trim()}`,
         auctionId: null,
         createdAt: payload.createdAt ?? new Date().toISOString(),
       };

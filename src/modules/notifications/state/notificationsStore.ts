@@ -11,6 +11,8 @@ type Listener = (snapshot: NotificationsSnapshot) => void;
 let notifications: NotificationItem[] = [];
 let unreadCount = 0;
 let toastMessage: string | null = null;
+// Set para evitar notificaciones duplicadas por mismo evento (clave: userId|auctionId|message)
+const seenNotificationKeys = new Set<string>();
 const listeners = new Set<Listener>();
 
 function snapshot(): NotificationsSnapshot {
@@ -36,9 +38,18 @@ export function subscribeNotifications(listener: Listener) {
 }
 
 export function addNotification(next: NotificationItem) {
+  // Dedupe por notificationId primero
   if (notifications.some((item) => item.notificationId === next.notificationId)) {
     return;
   }
+
+  // Dedupe adicional por clave compuesta (evita duplicados que vengan con distintos ids)
+  const key = `${next.userId ?? 0}|${next.auctionId ?? 'null'}|${(next.message ?? '').trim()}`;
+  if (seenNotificationKeys.has(key)) {
+    return;
+  }
+
+  seenNotificationKeys.add(key);
 
   notifications = [next, ...notifications].sort(
     (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
