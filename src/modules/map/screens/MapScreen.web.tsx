@@ -44,6 +44,8 @@ export function MapScreen() {
   const [volunteerPoints, setVolunteerPoints] = useState<Record<number, { lat: number; lng: number; shipmentId?: number; recordedAt?: string }>>({});
   const [mapInstance, setMapInstance] = useState<any>(null);
   const mapRef = useRef<any>(null);
+  const myMarkerRef = useRef<any>(null);
+  const myRingRef = useRef<any>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -204,6 +206,14 @@ export function MapScreen() {
     if (!myLocation || !mapInstance) return;
     try {
       mapInstance.setView(myLocation, 14, { animate: true });
+      // Ensure marker and ring render on top after pan
+      setTimeout(() => {
+        try {
+          myMarkerRef.current?.openPopup?.();
+          myMarkerRef.current?.bringToFront?.();
+          myRingRef.current?.bringToFront?.();
+        } catch {}
+      }, 300);
     } catch {
       // noop
     }
@@ -268,14 +278,15 @@ export function MapScreen() {
             <>
               {/* Ring to highlight area around user's exact point */}
               <CircleMarker
+                ref={myRingRef}
                 center={myLocation}
                 key='my-location-ring'
-                pathOptions={{ color: '#1f5fe0', fillColor: 'rgba(31,95,224,0.12)', fillOpacity: 0.35, weight: 2 }}
-                radius={18}
+                pathOptions={{ color: '#1f5fe0', fillColor: 'rgba(31,95,224,0.12)', fillOpacity: 0.5, weight: 2 }}
+                radius={22}
               />
 
               {/* Exact location marker on top */}
-              <Marker position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={1000}>
+              <Marker ref={myMarkerRef} position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={2000}>
                 <Popup>Tu ubicación exacta</Popup>
               </Marker>
             </>
