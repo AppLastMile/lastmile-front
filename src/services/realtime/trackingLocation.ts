@@ -57,8 +57,12 @@ export async function startTrackingLocationWatch(
           recordedAt: new Date(position.timestamp).toISOString(),
         });
       },
-      () => {
-        // Ignore initial read errors and keep watch flow alive.
+      (error) => {
+        // eslint-disable-next-line no-console
+        console.warn('[tracking][web] initial getCurrentPosition failed', {
+          code: error?.code,
+          message: error?.message,
+        });
       },
       webGeolocationOptions
     );
@@ -83,8 +87,12 @@ export async function startTrackingLocationWatch(
           recordedAt: new Date(position.timestamp).toISOString(),
         });
       },
-      () => {
-        // Ignore noisy browser geolocation errors and keep the watch alive.
+      (error) => {
+        // eslint-disable-next-line no-console
+        console.warn('[tracking][web] watchPosition error', {
+          code: error?.code,
+          message: error?.message,
+        });
       },
       webGeolocationOptions
     );

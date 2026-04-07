@@ -70,12 +70,17 @@ export function useVolunteerLocationBroadcast(
                 }
               }
 
-              emitRealtime('volunteer.location.update', {
+              const payload = {
                 lat: point.lat,
                 lng: point.lng,
                 accuracy: point.accuracy,
                 recordedAt: point.recordedAt,
-              });
+              };
+
+              // Emit compatibility aliases because backend event names can vary by environment.
+              emitRealtime('volunteer.location.update', payload);
+              emitRealtime('volunteer.location.changed', payload);
+              emitRealtime('volunteer.location.updated', payload);
 
               lastSent = {
                 lat: point.lat,

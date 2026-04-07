@@ -58,10 +58,21 @@ function normalizeVolunteerMarker(payload: unknown): VolunteerMarker | null {
     return null;
   }
 
-  const value = payload as Record<string, unknown>;
-  const lat = toFiniteNumber(value.lat ?? value.latitude);
-  const lng = toFiniteNumber(value.lng ?? value.longitude);
-  const rawId = toFiniteNumber(value.userId ?? value.volunteerId ?? value.id ?? value.updatedBy ?? value.updated_by);
+  const root = payload as Record<string, unknown>;
+  const value =
+    (root.data && typeof root.data === 'object' ? (root.data as Record<string, unknown>) : null) ??
+    (root.location && typeof root.location === 'object' ? { ...root, ...(root.location as Record<string, unknown>) } : null) ??
+    root;
+
+  const coordinates = Array.isArray(value.coordinates) ? value.coordinates : null;
+  const latFromArray = coordinates ? toFiniteNumber(coordinates[1]) : null;
+  const lngFromArray = coordinates ? toFiniteNumber(coordinates[0]) : null;
+
+  const lat = toFiniteNumber(value.lat ?? value.latitude) ?? latFromArray;
+  const lng = toFiniteNumber(value.lng ?? value.longitude) ?? lngFromArray;
+  const rawId = toFiniteNumber(
+    value.userId ?? value.volunteerId ?? value.id ?? value.updatedBy ?? value.updated_by
+  );
 
   if (lat === null || lng === null || rawId === null) {
     return null;
@@ -436,6 +447,7 @@ export function CreateMissionScreen() {
     // Request an initial snapshot using common event names. Servers may ignore unknown events.
     emitRealtime('volunteers.locations.snapshot.request', {});
     emitRealtime('volunteer.location.snapshot.request', {});
+    emitRealtime('campaign.volunteers.snapshot.request', {});
 
     const applySnapshot = (payload: unknown) => {
       const normalized = normalizeVolunteerSnapshot(payload);
@@ -473,9 +485,9 @@ export function CreateMissionScreen() {
       }
 
       const value = payload as Record<string, unknown>;
-        const rawId = toFiniteNumber(value.userId ?? value.volunteerId ?? value.id);
+      const rawId = toFiniteNumber(value.userId ?? value.volunteerId ?? value.id);
 
-        if (rawId === null) {
+      if (rawId === null) {
         return;
       }
 
@@ -495,6 +507,11 @@ export function CreateMissionScreen() {
 
     const offDisconnected = onRealtime('volunteer.disconnected', applyDisconnect);
     const offOffline = onRealtime('volunteer.offline', applyDisconnect);
+    const snapshotIntervalId = setInterval(() => {
+      emitRealtime('volunteers.locations.snapshot.request', {});
+      emitRealtime('volunteer.location.snapshot.request', {});
+      emitRealtime('campaign.volunteers.snapshot.request', {});
+    }, 10000);
 
     return () => {
       offSnapshot();
@@ -505,6 +522,7 @@ export function CreateMissionScreen() {
       offDirectUpdate();
       offDisconnected();
       offOffline();
+      clearInterval(snapshotIntervalId);
       leaveRealtimeRoom('volunteers:locations');
       leaveRealtimeRoom('volunteers:tracking');
     };
