@@ -11,6 +11,13 @@ import {
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import { getCampaigns, type Campaign } from '@/services/api/campaignsService';
+import {
+  connectTrackingSocket,
+  setTrackingSocketHandlers,
+  subscribeCampaignTracking,
+  unsubscribeCampaignTracking,
+} from '@/services/realtime/trackingSocket';
 
 type EventWithCity = {
   event: EventSummary;
@@ -31,6 +38,10 @@ export function MapScreen() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  const [volunteerPoints, setVolunteerPoints] = useState<Record<number, { lat: number; lng: number; shipmentId?: number; recordedAt?: string }>>({});
+  const [mapInstance, setMapInstance] = useState<any>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -77,6 +88,16 @@ export function MapScreen() {
     }
   }, []);
 
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const resp = await getCampaigns(1, 100);
+      setCampaigns(resp.data);
+      setSelectedCampaignId((current) => current ?? resp.data[0]?.id ?? null);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const refreshEventsSilently = useCallback(async () => {
     try {
       const response = await getEvents({ page: 1, limit: 100 });
@@ -88,6 +109,7 @@ export function MapScreen() {
 
   useEffect(() => {
     loadEvents();
+    void loadCampaigns();
   }, [loadEvents]);
 
   useEffect(() => {
@@ -140,11 +162,56 @@ export function MapScreen() {
     };
   }, []);
 
+  // Campaign tracking (organizer)
+  useEffect(() => {
+    if (!selectedCampaignId) return;
+
+    const auth = { token: (currentUser as any)?.accessToken, userId: (currentUser as any)?.id, role: (currentUser as any)?.role };
+    const socket = connectTrackingSocket(auth);
+
+    setTrackingSocketHandlers({
+      onVolunteerSnapshot: (points) => {
+        const next: Record<number, { lat: number; lng: number; shipmentId?: number; recordedAt?: string }> = {};
+
+        for (const p of points) {
+          if ((p as any).volunteerId) {
+            next[(p as any).volunteerId] = { lat: p.lat, lng: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt };
+          }
+        }
+
+        setVolunteerPoints(next);
+      },
+      onVolunteerLocation: (p) => {
+        if (!(p as any).volunteerId) return;
+        setVolunteerPoints((prev) => ({ ...prev, [(p as any).volunteerId]: { lat: p.lat, lng: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt } }));
+      },
+    });
+
+    subscribeCampaignTracking(selectedCampaignId);
+
+    return () => {
+      try {
+        unsubscribeCampaignTracking(selectedCampaignId);
+      } catch {
+        // noop
+      }
+    };
+  }, [selectedCampaignId]);
+
+  const centerOnMyLocation = () => {
+    if (!myLocation || !mapInstance) return;
+    try {
+      mapInstance.setView(myLocation, 14, { animate: true });
+    } catch {
+      // noop
+    }
+  };
+
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       <View className='flex-1' style={{ paddingLeft: webPanelInset }}>
       <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
-        <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+        <MapContainer whenCreated={setMapInstance} center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
           <TileLayer
             attribution='&copy; OpenStreetMap contributors'
             url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -177,7 +244,32 @@ export function MapScreen() {
               <Popup>Tu ubicacion actual</Popup>
             </CircleMarker>
           ) : null}
+
+          {/* Volunteer markers */}
+          {Object.entries(volunteerPoints).map(([vid, p]) => (
+            <CircleMarker key={`vol-${vid}`} center={[p.lat, p.lng]} pathOptions={{ color: '#16a34a', fillColor: '#16a34a' }} radius={7}>
+              <Popup>Voluntario {vid}{p.shipmentId ? ` — Envío #${p.shipmentId}` : ''}</Popup>
+            </CircleMarker>
+          ))}
         </MapContainer>
+
+        {/* Floating controls: campaign selector and center button (web) */}
+        <div style={{ position: 'absolute', right: 16, top: 16, zIndex: 600 }}>
+          {campaigns.length > 0 ? (
+            <select value={selectedCampaignId ?? ''} onChange={(e) => setSelectedCampaignId(Number(e.target.value))}>
+              <option value=''>Seleccionar campaña</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          ) : null}
+
+          <div style={{ marginTop: 8 }}>
+            <button onClick={centerOnMyLocation} disabled={!myLocation} style={{ background: '#1f5fe0', color: '#fff', padding: '8px 10px', borderRadius: 8 }}>
+              Mi ubicación
+            </button>
+          </div>
+        </div>
 
         {hasWelcomeBanner && showDonorWelcome ? (
           <View className='absolute left-3 right-3 top-3 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'>
