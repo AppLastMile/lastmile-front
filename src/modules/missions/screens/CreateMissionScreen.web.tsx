@@ -622,18 +622,6 @@ export function CreateMissionScreen() {
                   </CircleMarker>
                 ))}
 
-                {myLocation ? (
-                  <CircleMarker
-                    pane='my-location-pane'
-                    center={myLocation}
-                    key='my-location'
-                    pathOptions={{ color: '#1f5fe0', fillColor: '#1f5fe0', fillOpacity: 1 }}
-                    radius={6}
-                  >
-                    <Popup>Tu ubicación exacta</Popup>
-                  </CircleMarker>
-                ) : null}
-
                 {Object.values(volunteerMarkers).map((v) => (
                   <CircleMarker
                     center={[v.lat, v.lng]}
