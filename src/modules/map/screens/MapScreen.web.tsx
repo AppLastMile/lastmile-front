@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import { ActivityIndicator, Platform, SafeAreaView, Text, View } from 'react-native';
 import { CircleMarker, MapContainer, Popup, TileLayer, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -45,7 +46,6 @@ export function MapScreen() {
   const [mapInstance, setMapInstance] = useState<any>(null);
   const mapRef = useRef<any>(null);
   const myMarkerRef = useRef<any>(null);
-  const myRingRef = useRef<any>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -211,7 +211,6 @@ export function MapScreen() {
         try {
           myMarkerRef.current?.openPopup?.();
           myMarkerRef.current?.bringToFront?.();
-          myRingRef.current?.bringToFront?.();
         } catch {}
       }, 300);
     } catch {
@@ -294,22 +293,9 @@ export function MapScreen() {
           ))}
 
           {myLocation ? (
-            <>
-              {/* Ring to highlight area around user's exact point */}
-              <CircleMarker
-                ref={myRingRef}
-                pane='my-location-pane'
-                center={myLocation}
-                key='my-location-ring'
-                pathOptions={{ color: '#1f5fe0', fillColor: 'rgba(31,95,224,0.12)', fillOpacity: 0.6, weight: 2 }}
-                radius={22}
-              />
-
-              {/* Exact location marker on top */}
-              <Marker ref={myMarkerRef} pane='my-location-pane' position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={3000}>
-                <Popup>Tu ubicación exacta</Popup>
-              </Marker>
-            </>
+            <Marker ref={myMarkerRef} pane='my-location-pane' position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={3000}>
+              <Popup>Tu ubicación exacta</Popup>
+            </Marker>
           ) : null}
 
           {/* Volunteer markers */}
@@ -341,7 +327,7 @@ export function MapScreen() {
             }}
           >
             <span style={{ display: 'inline-flex', width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: '#e7efff' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 8a4 4 0 100 8 4 4 0 000-8z" fill="#1f5fe0"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5L3.5 3.5M20.5 20.5L19 19M5 19L3.5 20.5M20.5 3.5L19 5" stroke="#ffffff" strokeWidth="0"/></svg>
+              <FontAwesome5 name='crosshairs' size={12} color='#1f5fe0' />
             </span>
             <span style={{ fontSize: 13, fontWeight: 700 }}>Mi ubicación</span>
           </button>
