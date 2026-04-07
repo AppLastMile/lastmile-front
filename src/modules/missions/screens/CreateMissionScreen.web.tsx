@@ -434,7 +434,7 @@ export function CreateMissionScreen() {
               Lastmile
             </Text>
             <Text className='mt-1 text-sm text-[#5a7190]'>
-              Panel principal del organizador para gestionar eventos, mapa y operaciones.
+              Operador de logística y coordinación de misiones.
             </Text>
 
             <View className='mt-6'>
