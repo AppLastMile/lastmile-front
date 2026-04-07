@@ -300,23 +300,7 @@ export function MapScreen() {
           ))}
         </MapContainer>
 
-        {/* Floating controls: campaign selector and center button (web) */}
-        <div style={{ position: 'absolute', right: 16, top: 16, zIndex: 600 }}>
-          {campaigns.length > 0 ? (
-            <select value={selectedCampaignId ?? ''} onChange={(e) => setSelectedCampaignId(Number(e.target.value))}>
-              <option value=''>Seleccionar campaña</option>
-              {campaigns.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          ) : null}
-
-          <div style={{ marginTop: 8 }}>
-            <button onClick={centerOnMyLocation} disabled={!myLocation || !mapInstance} style={{ background: '#1f5fe0', color: '#fff', padding: '8px 10px', borderRadius: 8 }}>
-              Mi ubicación
-            </button>
-          </div>
-        </div>
+        {/* Controles flotantes removidos por diseño: selector de campañas y botón 'Mi ubicación' */}
 
         {hasWelcomeBanner && showDonorWelcome ? (
           <View className='absolute left-3 right-3 top-3 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'>
