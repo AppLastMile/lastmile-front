@@ -241,10 +241,29 @@ export function MapScreen() {
   const MapSetter = ({ onMapReady }: { onMapReady: (m: any) => void }) => {
     const map = useMap();
     useEffect(() => {
-      if (map) onMapReady(map);
+      if (map) {
+        try {
+          if (!map.getPane('my-location-pane')) {
+            map.createPane('my-location-pane');
+            const p = map.getPane('my-location-pane');
+            if (p && p.style) {
+              p.style.zIndex = '700';
+              p.style.pointerEvents = 'auto';
+            }
+          }
+        } catch (e) {
+          // ignore pane errors
+        }
+
+        onMapReady(map);
+      }
     }, [map, onMapReady]);
     return null;
   };
+
+  const donorWelcomeTop = 12;
+  const floatingControlsTop = 24;
+  const controlsTop = hasWelcomeBanner && showDonorWelcome ? floatingControlsTop + 62 : floatingControlsTop;
 
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
@@ -279,14 +298,15 @@ export function MapScreen() {
               {/* Ring to highlight area around user's exact point */}
               <CircleMarker
                 ref={myRingRef}
+                pane='my-location-pane'
                 center={myLocation}
                 key='my-location-ring'
-                pathOptions={{ color: '#1f5fe0', fillColor: 'rgba(31,95,224,0.12)', fillOpacity: 0.5, weight: 2 }}
+                pathOptions={{ color: '#1f5fe0', fillColor: 'rgba(31,95,224,0.12)', fillOpacity: 0.6, weight: 2 }}
                 radius={22}
               />
 
               {/* Exact location marker on top */}
-              <Marker ref={myMarkerRef} position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={2000}>
+              <Marker ref={myMarkerRef} pane='my-location-pane' position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={3000}>
                 <Popup>Tu ubicación exacta</Popup>
               </Marker>
             </>
@@ -301,23 +321,29 @@ export function MapScreen() {
         </MapContainer>
 
         {/* Controles flotantes removidos por diseño: selector de campañas y botón 'Mi ubicación' */}
-        {/* Re-introducir botón 'Mi ubicación' para web (visible para todos los roles) */}
-        <div style={{ position: 'absolute', right: 20, bottom: 20, zIndex: 900 }}>
+        {/* Botón 'Mi ubicación' web: estilo y ubicación similar al mapa native */}
+        <div style={{ position: 'absolute', right: 16, top: controlsTop, zIndex: 900 }}>
           <button
             onClick={centerOnMyLocation}
             disabled={!myLocation || !mapInstance}
             aria-label='Mi ubicación'
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
               background: '#1f5fe0',
               color: '#fff',
-              padding: '10px 14px',
-              borderRadius: 999,
+              padding: '8px 12px',
+              borderRadius: 20,
               border: 'none',
               boxShadow: '0 6px 18px rgba(15,38,88,0.24)',
               cursor: myLocation && mapInstance ? 'pointer' : 'not-allowed',
             }}
           >
-            Mi ubicación
+            <span style={{ display: 'inline-flex', width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: '#e7efff' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 8a4 4 0 100 8 4 4 0 000-8z" fill="#1f5fe0"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5L3.5 3.5M20.5 20.5L19 19M5 19L3.5 20.5M20.5 3.5L19 5" stroke="#ffffff" strokeWidth="0"/></svg>
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Mi ubicación</span>
           </button>
         </div>
 
