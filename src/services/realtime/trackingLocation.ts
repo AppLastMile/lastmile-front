@@ -4,6 +4,7 @@ import * as Location from 'expo-location';
 export type TrackingDevicePoint = {
   lat: number;
   lng: number;
+  accuracy?: number;
   speed?: number;
   heading?: number;
   recordedAt: string;
@@ -41,6 +42,10 @@ export async function startTrackingLocationWatch(
         onPoint({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          accuracy:
+            typeof position.coords.accuracy === 'number' && Number.isFinite(position.coords.accuracy)
+              ? position.coords.accuracy
+              : undefined,
           speed:
             typeof position.coords.speed === 'number' && Number.isFinite(position.coords.speed)
               ? position.coords.speed
@@ -63,6 +68,10 @@ export async function startTrackingLocationWatch(
         onPoint({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          accuracy:
+            typeof position.coords.accuracy === 'number' && Number.isFinite(position.coords.accuracy)
+              ? position.coords.accuracy
+              : undefined,
           speed:
             typeof position.coords.speed === 'number' && Number.isFinite(position.coords.speed)
               ? position.coords.speed
@@ -91,29 +100,9 @@ export async function startTrackingLocationWatch(
     throw new Error('Permiso de ubicacion denegado.');
   }
 
-  // Force an initial precise fix so the first broadcast is closer to real location.
-  const initialFix = await Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.Highest,
-    maximumAge: 0,
-  });
-
-  onPoint({
-    lat: initialFix.coords.latitude,
-    lng: initialFix.coords.longitude,
-    speed:
-      typeof initialFix.coords.speed === 'number' && Number.isFinite(initialFix.coords.speed)
-        ? initialFix.coords.speed
-        : undefined,
-    heading:
-      typeof initialFix.coords.heading === 'number' && Number.isFinite(initialFix.coords.heading)
-        ? initialFix.coords.heading
-        : undefined,
-    recordedAt: new Date(initialFix.timestamp).toISOString(),
-  });
-
   const subscription = await Location.watchPositionAsync(
     {
-      accuracy: Location.Accuracy.Highest,
+      accuracy: Location.Accuracy.Balanced,
       timeInterval: timeIntervalMs,
       distanceInterval: distanceIntervalMeters,
     },
@@ -121,6 +110,10 @@ export async function startTrackingLocationWatch(
       onPoint({
         lat: location.coords.latitude,
         lng: location.coords.longitude,
+        accuracy:
+          typeof location.coords.accuracy === 'number' && Number.isFinite(location.coords.accuracy)
+            ? location.coords.accuracy
+            : undefined,
         speed:
           typeof location.coords.speed === 'number' && Number.isFinite(location.coords.speed)
             ? location.coords.speed
