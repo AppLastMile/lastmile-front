@@ -148,6 +148,31 @@ function RecenterMap({
   return null;
 }
 
+// Helper component to create a dedicated pane for the user's location so it renders above other layers
+const MapSetter = ({ onMapReady }: { onMapReady?: (m: any) => void }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (map) {
+      try {
+        if (!map.getPane('my-location-pane')) {
+          map.createPane('my-location-pane');
+          const p = map.getPane('my-location-pane');
+          if (p && p.style) {
+            p.style.zIndex = '700';
+            p.style.pointerEvents = 'auto';
+          }
+        }
+      } catch (e) {
+        // ignore pane errors
+      }
+
+      onMapReady?.(map);
+    }
+  }, [map, onMapReady]);
+
+  return null;
+};
+
 // eslint-disable-next-line sonarjs/cognitive-complexity
 export function CreateMissionScreen() {
   const router = useRouter();
@@ -545,22 +570,14 @@ export function CreateMissionScreen() {
             </View>
           </View>
 
-          <View className={`${isDesktop ? 'flex-1' : 'w-full'} min-h-[760px] relative overflow-hidden rounded-[34px] border border-[#d2e1f8] bg-[#f6faff] shadow-[0_18px_42px_rgba(19,39,78,0.12)]`}>
+            <View className={`${isDesktop ? 'flex-1' : 'w-full'} min-h-[760px] relative overflow-hidden rounded-[34px] border border-[#d2e1f8] bg-[#f6faff] shadow-[0_18px_42px_rgba(19,39,78,0.12)]`}>
             <View className='absolute left-0 right-0 top-0 bottom-0' style={{ zIndex: 0 }}>
-                      {myLocation ? (
-                        <CircleMarker
-                          center={myLocation}
-                          key='my-location'
-                          pathOptions={{ color: '#1f5fe0', fillColor: '#1f5fe0', fillOpacity: 1 }}
-                          radius={6}
-                        >
-                          <Popup>Tu ubicación exacta</Popup>
-                        </CircleMarker>
-                      ) : null}
+              <MapContainer
                 center={mapCenter}
                 style={{ height: '100%', width: '100%' }}
                 zoom={6}
               >
+                <MapSetter />
                 <RecenterMap
                   commandId={centerCommandId}
                   locateCommandId={locateCommandId}
@@ -615,6 +632,18 @@ export function CreateMissionScreen() {
                     </Popup>
                   </CircleMarker>
                 ))}
+
+                {myLocation ? (
+                  <CircleMarker
+                    pane='my-location-pane'
+                    center={myLocation}
+                    key='my-location'
+                    pathOptions={{ color: '#1f5fe0', fillColor: '#1f5fe0', fillOpacity: 1 }}
+                    radius={6}
+                  >
+                    <Popup>Tu ubicación exacta</Popup>
+                  </CircleMarker>
+                ) : null}
 
                 {Object.values(volunteerMarkers).map((v) => (
                   <CircleMarker
