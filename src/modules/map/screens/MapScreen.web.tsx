@@ -45,7 +45,7 @@ export function MapScreen() {
   const [volunteerPoints, setVolunteerPoints] = useState<Record<number, { lat: number; lng: number; shipmentId?: number; recordedAt?: string }>>({});
   const [mapInstance, setMapInstance] = useState<any>(null);
   const mapRef = useRef<any>(null);
-  const myMarkerRef = useRef<any>(null);
+  const myCircleRef = useRef<any>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -209,8 +209,10 @@ export function MapScreen() {
       // Ensure marker and ring render on top after pan
       setTimeout(() => {
         try {
-          myMarkerRef.current?.openPopup?.();
-          myMarkerRef.current?.bringToFront?.();
+          try {
+            L.popup({ offset: [0, -10], autoPan: false }).setLatLng(myLocation as any).setContent('Tu ubicación exacta').openOn(mapInstance);
+          } catch (e) {}
+          myCircleRef.current?.bringToFront?.();
         } catch {}
       }, 300);
     } catch {
@@ -293,9 +295,16 @@ export function MapScreen() {
           ))}
 
           {myLocation ? (
-            <Marker ref={myMarkerRef} pane='my-location-pane' position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={3000}>
+            <CircleMarker
+              ref={myCircleRef}
+              pane='my-location-pane'
+              center={myLocation}
+              key='my-location'
+              pathOptions={{ color: '#1f5fe0', fillColor: '#1f5fe0', fillOpacity: 1 }}
+              radius={6}
+            >
               <Popup>Tu ubicación exacta</Popup>
-            </Marker>
+            </CircleMarker>
           ) : null}
 
           {/* Volunteer markers */}
