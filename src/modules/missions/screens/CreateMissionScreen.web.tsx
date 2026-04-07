@@ -1,6 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useRouter } from 'expo-router';
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import {
@@ -24,6 +24,20 @@ import {
 import { createEvent, type EventSummary, getEvents } from '@/services/api/eventsService';
 import { getPickupPoints, type PickupPoint } from '@/services/api/logisticsService';
 import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
+import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import {
+  connectRealtime,
+  joinRealtimeRoom,
+  leaveRealtimeRoom,
+  onRealtime,
+} from '@/services/realtime/realtimeService';
+
+type VolunteerMarker = {
+  userId: number;
+  name: string;
+  lat: number;
+  lng: number;
+};
 
 const DEFAULT_CREATED_BY = 1;
 const DEFAULT_DISASTER_TYPE = 'desastre_natural';
@@ -139,6 +153,10 @@ export function CreateMissionScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1200;
+  const { currentUser } = useAuthSession();
+  const [volunteerMarkers, setVolunteerMarkers] = useState<Record<number, VolunteerMarker>>({});
+  const volunteerMarkersRef = useRef<Record<number, VolunteerMarker>>({});
+
   const [isMissionMenuOpen, setIsMissionMenuOpen] = useState(false);
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
@@ -302,6 +320,48 @@ export function CreateMissionScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!currentUser?.accessToken) return;
+
+    connectRealtime({ token: currentUser.accessToken, userId: currentUser.id, role: currentUser.role });
+    joinRealtimeRoom('volunteers:locations');
+
+    const offSnapshot = onRealtime<{ volunteers: VolunteerMarker[] }>(
+      'volunteers.locations.snapshot',
+      ({ volunteers }) => {
+        const next: Record<number, VolunteerMarker> = {};
+        volunteers.forEach((v) => { next[v.userId] = v; });
+        volunteerMarkersRef.current = next;
+        setVolunteerMarkers({ ...next });
+      },
+    );
+
+    const offUpdated = onRealtime<VolunteerMarker>(
+      'volunteer.location.updated',
+      (v) => {
+        volunteerMarkersRef.current = { ...volunteerMarkersRef.current, [v.userId]: v };
+        setVolunteerMarkers({ ...volunteerMarkersRef.current });
+      },
+    );
+
+    const offDisconnected = onRealtime<{ userId: number }>(
+      'volunteer.disconnected',
+      ({ userId }) => {
+        const next = { ...volunteerMarkersRef.current };
+        delete next[userId];
+        volunteerMarkersRef.current = next;
+        setVolunteerMarkers({ ...next });
+      },
+    );
+
+    return () => {
+      offSnapshot();
+      offUpdated();
+      offDisconnected();
+      leaveRealtimeRoom('volunteers:locations');
+    };
+  }, [currentUser?.accessToken, currentUser?.id, currentUser?.role]);
 
   useEffect(() => {
     const refreshId = setInterval(() => {
@@ -546,14 +606,27 @@ export function CreateMissionScreen() {
                     </Popup>
                   </CircleMarker>
                 ))}
+
+                {Object.values(volunteerMarkers).map((v) => (
+                  <CircleMarker
+                    center={[v.lat, v.lng]}
+                    key={`volunteer-${v.userId}`}
+                    pathOptions={{ color: '#15803d', fillColor: '#22c55e', fillOpacity: 0.95 }}
+                    radius={10}
+                  >
+                    <Popup>
+                      <strong>Voluntario: {v.name}</strong>
+                    </Popup>
+                  </CircleMarker>
+                ))}
               </MapContainer>
             </View>
 
             <View className='absolute left-4 right-4 top-4 flex-row flex-wrap gap-3' style={{ pointerEvents: 'none', zIndex: 45 }}>
               <SummaryPill label='GPS' value={myLocation ? 'Conectado' : 'Sin señal'} accent='#49c9ad' />
               <SummaryPill label='Operaciones' value={`${mappedEvents.length} activas`} accent='#0a63ff' />
+              <SummaryPill label='Voluntarios' value={`${Object.keys(volunteerMarkers).length} en línea`} accent='#22c55e' />
               <SummaryPill label='Recogidas' value={`${mappedPickupPoints.length} puntos`} accent='#7a95c9' />
-              <SummaryPill label='Cobertura' value='Colombia' accent='#f5bb4c' />
             </View>
 
             <View
