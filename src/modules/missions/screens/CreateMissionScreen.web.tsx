@@ -557,17 +557,6 @@ export function CreateMissionScreen() {
               </Text>
             </View>
 
-            <View className='mt-5 rounded-2xl border border-[#e2ebf8] bg-[#fbfdff] px-4 py-4'>
-              <Text className='text-xs font-semibold uppercase tracking-[0.22em] text-[#6f7f9b]'>
-                Estado
-              </Text>
-              <Text className='mt-1 text-sm font-semibold text-[#17325b]'>
-                {myLocation ? 'Ubicación conectada' : 'Ubicación pendiente'}
-              </Text>
-              <Text className='mt-1 text-xs text-[#60738f]'>
-                {loadError || `${mappedEvents.length} eventos y ${mappedPickupPoints.length} puntos visibles.`}
-              </Text>
-            </View>
           </View>
 
             <View className={`${isDesktop ? 'flex-1' : 'w-full'} min-h-[760px] relative overflow-hidden rounded-[34px] border border-[#d2e1f8] bg-[#f6faff] shadow-[0_18px_42px_rgba(19,39,78,0.12)]`}>
@@ -661,7 +650,6 @@ export function CreateMissionScreen() {
             </View>
 
             <View className='absolute left-4 right-4 top-4 flex-row flex-wrap gap-3' style={{ pointerEvents: 'none', zIndex: 45 }}>
-              <SummaryPill label='GPS' value={myLocation ? 'Conectado' : 'Sin señal'} accent='#49c9ad' />
               <SummaryPill label='Operaciones' value={`${mappedEvents.length} activas`} accent='#0a63ff' />
               <SummaryPill label='Voluntarios' value={`${Object.keys(volunteerMarkers).length} en línea`} accent='#22c55e' />
               <SummaryPill label='Recogidas' value={`${mappedPickupPoints.length} puntos`} accent='#7a95c9' />
@@ -684,40 +672,6 @@ export function CreateMissionScreen() {
                   </Text>
                 </View>
               </View>
-            </View>
-
-            <View className='absolute right-4 bottom-4' style={{ zIndex: 50 }}>
-              <Pressable
-                className={`rounded-2xl px-4 py-3 shadow-[0_10px_24px_rgba(10,99,255,0.28)] ${isLocatingUser ? 'bg-[#93aed8]' : 'bg-[#0a63ff]'}`}
-                disabled={isLocatingUser}
-                onPress={() => {
-                  if (isLocatingUser) {
-                    return;
-                  }
-
-                  if (myLocation) {
-                    centerMapOnLocation(myLocation);
-                    return;
-                  }
-
-                  requestUserLocation();
-                }}
-              >
-                <View className='flex-row items-center gap-2'>
-                  <View className='h-7 w-7 items-center justify-center rounded-full bg-white/20'>
-                    <MaterialIcons color='#ffffff' name='my-location' size={16} />
-                  </View>
-                  <Text className='text-sm font-semibold text-white'>
-                    {isLocatingUser ? 'Buscando...' : 'Mi ubicación'}
-                  </Text>
-                </View>
-              </Pressable>
-
-              {locationActionError ? (
-                <View className='mt-2 max-w-[280px] rounded-xl bg-[#fff4e6] px-3 py-2'>
-                  <Text className='text-xs text-[#9a6400]'>{locationActionError}</Text>
-                </View>
-              ) : null}
             </View>
 
           </View>
