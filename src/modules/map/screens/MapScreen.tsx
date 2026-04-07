@@ -159,7 +159,8 @@ export function MapScreen() {
         }
 
         const current = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+          accuracy: Location.Accuracy.Highest,
+          maximumAge: 0,
         });
 
         if (isMounted) {
@@ -169,7 +170,7 @@ export function MapScreen() {
 
         watch = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Balanced,
+            accuracy: Location.Accuracy.Highest,
             timeInterval: 3000,
             distanceInterval: 8,
           },

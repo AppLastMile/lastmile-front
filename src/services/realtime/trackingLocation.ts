@@ -29,6 +29,35 @@ export async function startTrackingLocationWatch(
       throw new Error('Geolocalizacion no disponible en este navegador.');
     }
 
+    const webGeolocationOptions: PositionOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: Math.max(15000, timeIntervalMs * 3),
+    };
+
+    // Take an initial precise reading to avoid stale browser cache positions.
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        onPoint({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          speed:
+            typeof position.coords.speed === 'number' && Number.isFinite(position.coords.speed)
+              ? position.coords.speed
+              : undefined,
+          heading:
+            typeof position.coords.heading === 'number' && Number.isFinite(position.coords.heading)
+              ? position.coords.heading
+              : undefined,
+          recordedAt: new Date(position.timestamp).toISOString(),
+        });
+      },
+      () => {
+        // Ignore initial read errors and keep watch flow alive.
+      },
+      webGeolocationOptions
+    );
+
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         onPoint({
@@ -48,11 +77,7 @@ export async function startTrackingLocationWatch(
       () => {
         // Ignore noisy browser geolocation errors and keep the watch alive.
       },
-      {
-        enableHighAccuracy: false,
-        maximumAge: timeIntervalMs,
-        timeout: timeIntervalMs * 2,
-      }
+      webGeolocationOptions
     );
 
     return {
@@ -66,9 +91,29 @@ export async function startTrackingLocationWatch(
     throw new Error('Permiso de ubicacion denegado.');
   }
 
+  // Force an initial precise fix so the first broadcast is closer to real location.
+  const initialFix = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.Highest,
+    maximumAge: 0,
+  });
+
+  onPoint({
+    lat: initialFix.coords.latitude,
+    lng: initialFix.coords.longitude,
+    speed:
+      typeof initialFix.coords.speed === 'number' && Number.isFinite(initialFix.coords.speed)
+        ? initialFix.coords.speed
+        : undefined,
+    heading:
+      typeof initialFix.coords.heading === 'number' && Number.isFinite(initialFix.coords.heading)
+        ? initialFix.coords.heading
+        : undefined,
+    recordedAt: new Date(initialFix.timestamp).toISOString(),
+  });
+
   const subscription = await Location.watchPositionAsync(
     {
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: Location.Accuracy.Highest,
       timeInterval: timeIntervalMs,
       distanceInterval: distanceIntervalMeters,
     },

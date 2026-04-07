@@ -27,6 +27,7 @@ import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/stat
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import {
   connectRealtime,
+  emitRealtime,
   joinRealtimeRoom,
   leaveRealtimeRoom,
   onRealtime,
@@ -38,6 +39,72 @@ type VolunteerMarker = {
   lat: number;
   lng: number;
 };
+
+function normalizeVolunteerMarker(payload: unknown): VolunteerMarker | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const value = payload as Record<string, unknown>;
+  const lat = value.lat ?? value.latitude;
+  const lng = value.lng ?? value.longitude;
+  const rawId = value.userId ?? value.volunteerId ?? value.id ?? value.updatedBy ?? value.updated_by;
+
+  if (typeof lat !== 'number' || typeof lng !== 'number' || typeof rawId !== 'number') {
+    return null;
+  }
+
+  const fallbackName = `Voluntario ${rawId}`;
+  const name =
+    typeof value.name === 'string'
+      ? value.name
+      : typeof value.fullName === 'string'
+        ? value.fullName
+        : typeof value.userName === 'string'
+          ? value.userName
+          : typeof value.volunteerName === 'string'
+            ? value.volunteerName
+            : fallbackName;
+
+  return {
+    userId: rawId,
+    name,
+    lat,
+    lng,
+  };
+}
+
+function normalizeVolunteerSnapshot(payload: unknown): VolunteerMarker[] {
+  let collection: unknown[] = [];
+
+  if (Array.isArray(payload)) {
+    collection = payload;
+  } else if (payload && typeof payload === 'object') {
+    const value = payload as Record<string, unknown>;
+
+    if (Array.isArray(value.volunteers)) {
+      collection = value.volunteers;
+    } else if (Array.isArray(value.data)) {
+      collection = value.data;
+    } else if (Array.isArray(value.items)) {
+      collection = value.items;
+    } else if (Array.isArray(value.points)) {
+      collection = value.points;
+    }
+  }
+
+  const byId = new Map<number, VolunteerMarker>();
+
+  collection.forEach((item) => {
+    const normalized = normalizeVolunteerMarker(item);
+
+    if (normalized) {
+      byId.set(normalized.userId, normalized);
+    }
+  });
+
+  return Array.from(byId.values());
+}
 
 const DEFAULT_CREATED_BY = 1;
 const DEFAULT_DISASTER_TYPE = 'desastre_natural';
@@ -351,40 +418,82 @@ export function CreateMissionScreen() {
 
     connectRealtime({ token: currentUser.accessToken, userId: currentUser.id, role: currentUser.role });
     joinRealtimeRoom('volunteers:locations');
+    joinRealtimeRoom('volunteers:tracking');
 
-    const offSnapshot = onRealtime<{ volunteers: VolunteerMarker[] }>(
-      'volunteers.locations.snapshot',
-      ({ volunteers }) => {
-        const next: Record<number, VolunteerMarker> = {};
-        volunteers.forEach((v) => { next[v.userId] = v; });
-        volunteerMarkersRef.current = next;
-        setVolunteerMarkers({ ...next });
-      },
-    );
+    // Request an initial snapshot using common event names. Servers may ignore unknown events.
+    emitRealtime('volunteers.locations.snapshot.request', {});
+    emitRealtime('volunteer.location.snapshot.request', {});
 
-    const offUpdated = onRealtime<VolunteerMarker>(
-      'volunteer.location.updated',
-      (v) => {
-        volunteerMarkersRef.current = { ...volunteerMarkersRef.current, [v.userId]: v };
-        setVolunteerMarkers({ ...volunteerMarkersRef.current });
-      },
-    );
+    const applySnapshot = (payload: unknown) => {
+      const normalized = normalizeVolunteerSnapshot(payload);
 
-    const offDisconnected = onRealtime<{ userId: number }>(
-      'volunteer.disconnected',
-      ({ userId }) => {
-        const next = { ...volunteerMarkersRef.current };
-        delete next[userId];
-        volunteerMarkersRef.current = next;
-        setVolunteerMarkers({ ...next });
-      },
-    );
+      if (normalized.length === 0) {
+        return;
+      }
+
+      const next: Record<number, VolunteerMarker> = {};
+      normalized.forEach((item) => {
+        next[item.userId] = item;
+      });
+
+      volunteerMarkersRef.current = next;
+      setVolunteerMarkers({ ...next });
+    };
+
+    const applyLocationUpdate = (payload: unknown) => {
+      const normalized = normalizeVolunteerMarker(payload);
+
+      if (!normalized) {
+        return;
+      }
+
+      volunteerMarkersRef.current = {
+        ...volunteerMarkersRef.current,
+        [normalized.userId]: normalized,
+      };
+      setVolunteerMarkers({ ...volunteerMarkersRef.current });
+    };
+
+    const applyDisconnect = (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+
+      const value = payload as Record<string, unknown>;
+      const rawId = value.userId ?? value.volunteerId ?? value.id;
+
+      if (typeof rawId !== 'number') {
+        return;
+      }
+
+      const next = { ...volunteerMarkersRef.current };
+      delete next[rawId];
+      volunteerMarkersRef.current = next;
+      setVolunteerMarkers({ ...next });
+    };
+
+    const offSnapshot = onRealtime('volunteers.locations.snapshot', applySnapshot);
+    const offSnapshotLegacy = onRealtime('volunteer.location.snapshot', applySnapshot);
+    const offCampaignSnapshot = onRealtime('campaign.volunteers.snapshot', applySnapshot);
+
+    const offUpdated = onRealtime('volunteer.location.updated', applyLocationUpdate);
+    const offChanged = onRealtime('volunteer.location.changed', applyLocationUpdate);
+    const offDirectUpdate = onRealtime('volunteer.location.update', applyLocationUpdate);
+
+    const offDisconnected = onRealtime('volunteer.disconnected', applyDisconnect);
+    const offOffline = onRealtime('volunteer.offline', applyDisconnect);
 
     return () => {
       offSnapshot();
+      offSnapshotLegacy();
+      offCampaignSnapshot();
       offUpdated();
+      offChanged();
+      offDirectUpdate();
       offDisconnected();
+      offOffline();
       leaveRealtimeRoom('volunteers:locations');
+      leaveRealtimeRoom('volunteers:tracking');
     };
   }, [currentUser?.accessToken, currentUser?.id, currentUser?.role]);
 
