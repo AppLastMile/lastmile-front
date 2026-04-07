@@ -314,9 +314,19 @@ export function MapScreen() {
                 radius={20}
                 strokeColor='#1f5fe0'
                 fillColor='rgba(31,95,224,0.12)'
-                lineWidth={2}
+                strokeWidth={2}
                 zIndex={1}
               />
+
+              {/* Small filled dot to mark exact location (shows above the circle) */}
+              <Marker
+                coordinate={myLocation}
+                key='my-location-dot'
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+              >
+                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#1f5fe0', borderWidth: 2, borderColor: 'rgba(31,95,224,0.18)' }} />
+              </Marker>
             </>
           ) : null}
 
