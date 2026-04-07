@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Platform, SafeAreaView, Text, View } from 'react-native';
 import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
@@ -42,6 +42,7 @@ export function MapScreen() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
   const [volunteerPoints, setVolunteerPoints] = useState<Record<number, { lat: number; lng: number; shipmentId?: number; recordedAt?: string }>>({});
   const [mapInstance, setMapInstance] = useState<any>(null);
+  const mapRef = useRef<any>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -211,7 +212,7 @@ export function MapScreen() {
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       <View className='flex-1' style={{ paddingLeft: webPanelInset }}>
       <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
-        <MapContainer whenCreated={setMapInstance} center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+        <MapContainer ref={mapRef as any} whenReady={() => { if (mapRef.current) setMapInstance(mapRef.current); }} center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
           <TileLayer
             attribution='&copy; OpenStreetMap contributors'
             url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
