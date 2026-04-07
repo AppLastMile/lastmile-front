@@ -4,7 +4,7 @@ import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 import { ActivityIndicator, Platform, Pressable, SafeAreaView, Text, View } from 'react-native';
-import MapView, { Marker, type Region } from 'react-native-maps';
+import MapView, { Marker, Circle, type Region } from 'react-native-maps';
 
 import {
   findColombianCityByName,
@@ -308,13 +308,25 @@ export function MapScreen() {
           ))}
 
           {myLocation ? (
-            <Marker
-              coordinate={myLocation}
-              description='Ubicacion actual del dispositivo'
-              key='my-location'
-              pinColor='#2563eb'
-              title='Tu ubicacion'
-            />
+            <>
+              <Circle
+                center={myLocation}
+                radius={20}
+                strokeColor='#1f5fe0'
+                fillColor='rgba(31,95,224,0.12)'
+                lineWidth={2}
+                zIndex={1}
+              />
+
+              <Marker
+                coordinate={myLocation}
+                description='Ubicacion actual del dispositivo'
+                key='my-location'
+                pinColor='#2563eb'
+                title='Tu ubicacion'
+                zIndex={2}
+              />
+            </>
           ) : null}
 
           {/* Volunteer markers (organizer view) */}
