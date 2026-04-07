@@ -40,17 +40,30 @@ type VolunteerMarker = {
   lng: number;
 };
 
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function normalizeVolunteerMarker(payload: unknown): VolunteerMarker | null {
   if (!payload || typeof payload !== 'object') {
     return null;
   }
 
   const value = payload as Record<string, unknown>;
-  const lat = value.lat ?? value.latitude;
-  const lng = value.lng ?? value.longitude;
-  const rawId = value.userId ?? value.volunteerId ?? value.id ?? value.updatedBy ?? value.updated_by;
+  const lat = toFiniteNumber(value.lat ?? value.latitude);
+  const lng = toFiniteNumber(value.lng ?? value.longitude);
+  const rawId = toFiniteNumber(value.userId ?? value.volunteerId ?? value.id ?? value.updatedBy ?? value.updated_by);
 
-  if (typeof lat !== 'number' || typeof lng !== 'number' || typeof rawId !== 'number') {
+  if (lat === null || lng === null || rawId === null) {
     return null;
   }
 
@@ -460,9 +473,9 @@ export function CreateMissionScreen() {
       }
 
       const value = payload as Record<string, unknown>;
-      const rawId = value.userId ?? value.volunteerId ?? value.id;
+        const rawId = toFiniteNumber(value.userId ?? value.volunteerId ?? value.id);
 
-      if (typeof rawId !== 'number') {
+        if (rawId === null) {
         return;
       }
 
