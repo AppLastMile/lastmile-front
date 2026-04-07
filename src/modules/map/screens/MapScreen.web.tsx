@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Platform, SafeAreaView, Text, View } from 'react-native';
-import { CircleMarker, MapContainer, Popup, TileLayer, Marker } from 'react-leaflet';
+import { CircleMarker, MapContainer, Popup, TileLayer, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -227,11 +227,21 @@ export function MapScreen() {
     }
   }, []);
 
+  // Helper component to expose the Leaflet map instance via react-leaflet's `useMap`
+  const MapSetter = ({ onMapReady }: { onMapReady: (m: any) => void }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (map) onMapReady(map);
+    }, [map, onMapReady]);
+    return null;
+  };
+
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       <View className='flex-1' style={{ paddingLeft: webPanelInset }}>
       <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
-        <MapContainer ref={mapRef as any} whenReady={() => { if (mapRef.current) setMapInstance(mapRef.current); }} center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+        <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+          <MapSetter onMapReady={setMapInstance} />
           <TileLayer
             attribution='&copy; OpenStreetMap contributors'
             url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -280,7 +290,7 @@ export function MapScreen() {
           ) : null}
 
           <div style={{ marginTop: 8 }}>
-            <button onClick={centerOnMyLocation} disabled={!myLocation} style={{ background: '#1f5fe0', color: '#fff', padding: '8px 10px', borderRadius: 8 }}>
+            <button onClick={centerOnMyLocation} disabled={!myLocation || !mapInstance} style={{ background: '#1f5fe0', color: '#fff', padding: '8px 10px', borderRadius: 8 }}>
               Mi ubicación
             </button>
           </div>
