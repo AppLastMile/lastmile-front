@@ -301,6 +301,25 @@ export function MapScreen() {
         </MapContainer>
 
         {/* Controles flotantes removidos por diseño: selector de campañas y botón 'Mi ubicación' */}
+        {/* Re-introducir botón 'Mi ubicación' para web (visible para todos los roles) */}
+        <div style={{ position: 'absolute', right: 20, bottom: 20, zIndex: 900 }}>
+          <button
+            onClick={centerOnMyLocation}
+            disabled={!myLocation || !mapInstance}
+            aria-label='Mi ubicación'
+            style={{
+              background: '#1f5fe0',
+              color: '#fff',
+              padding: '10px 14px',
+              borderRadius: 999,
+              border: 'none',
+              boxShadow: '0 6px 18px rgba(15,38,88,0.24)',
+              cursor: myLocation && mapInstance ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Mi ubicación
+          </button>
+        </div>
 
         {hasWelcomeBanner && showDonorWelcome ? (
           <View className='absolute left-3 right-3 top-3 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'>
