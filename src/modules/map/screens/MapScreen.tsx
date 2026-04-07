@@ -317,15 +317,6 @@ export function MapScreen() {
                 lineWidth={2}
                 zIndex={1}
               />
-
-              <Marker
-                coordinate={myLocation}
-                description='Ubicacion actual del dispositivo'
-                key='my-location'
-                pinColor='#2563eb'
-                title='Tu ubicacion'
-                zIndex={2}
-              />
             </>
           ) : null}
 
