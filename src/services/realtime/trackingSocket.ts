@@ -22,6 +22,8 @@ type TrackingHandlers = {
   onLocation?: TrackingLocationHandler;
   onAck?: TrackingAckHandler;
   onError?: TrackingErrorHandler;
+  onVolunteerLocation?: (payload: TrackingLocationUpdatePayload & { volunteerId?: number }) => void;
+  onVolunteerSnapshot?: (payload: Array<TrackingLocationUpdatePayload & { volunteerId?: number }>) => void;
 };
 
 type TrackingLocationUpdatePayload = {
@@ -241,6 +243,32 @@ function normalizeTrackingPoint(payload: Record<string, unknown>) {
   } satisfies ShipmentLocationPoint;
 }
 
+function normalizeVolunteerPoint(payload: Record<string, unknown>) {
+  const lat = payload.lat ?? payload.latitude;
+  const lng = payload.lng ?? payload.longitude;
+  const shipmentId = payload.shipmentId ?? payload.shipment_id;
+  const volunteerId = payload.volunteerId ?? payload.volunteer_id ?? payload.updatedBy ?? payload.updated_by;
+
+  if ((typeof lat !== 'number') || (typeof lng !== 'number')) {
+    return null;
+  }
+
+  return {
+    shipmentId: typeof shipmentId === 'number' ? shipmentId : undefined,
+    volunteerId: typeof volunteerId === 'number' ? volunteerId : undefined,
+    lat,
+    lng,
+    speed: typeof payload.speed === 'number' ? payload.speed : undefined,
+    heading: typeof payload.heading === 'number' ? payload.heading : undefined,
+    recordedAt:
+      typeof payload.recordedAt === 'string'
+        ? payload.recordedAt
+        : typeof payload.recorded_at === 'string'
+          ? payload.recorded_at
+          : new Date().toISOString(),
+  };
+}
+
 function flushPendingUpdates() {
   if (!socket?.connected || pendingUpdates.length === 0) {
     return;
@@ -385,6 +413,39 @@ export function connectTrackingSocket(auth: TrackingAuth = {}, nextHandlers: Tra
     }
   });
 
+  // Campaign-level volunteer tracking
+  socket.on('campaign.volunteers.snapshot', (payload: unknown) => {
+    if (!payload || !Array.isArray(payload)) {
+      return;
+    }
+
+    const points: Array<TrackingLocationUpdatePayload & { volunteerId?: number }> = [];
+
+    for (const item of payload as unknown[] as Record<string, unknown>[]) {
+      const p = normalizeVolunteerPoint(item);
+
+      if (p) {
+        points.push(p as TrackingLocationUpdatePayload & { volunteerId?: number });
+      }
+    }
+
+    if (points.length > 0) {
+      handlers.onVolunteerSnapshot?.(points);
+    }
+  });
+
+  socket.on('volunteer.location.changed', (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+
+    const p = normalizeVolunteerPoint(payload as Record<string, unknown>);
+
+    if (p) {
+      handlers.onVolunteerLocation?.(p as TrackingLocationUpdatePayload & { volunteerId?: number });
+    }
+  });
+
   socket.io.on('reconnect_attempt', (attempt) => {
     logTrackingDebug('reconnect_attempt', attempt);
   });
@@ -403,6 +464,26 @@ export function setTrackingSocketHandlers(nextHandlers: TrackingHandlers) {
 export function subscribeShipmentTracking(shipmentId: number) {
   activeShipmentId = shipmentId;
   subscribeActiveShipment();
+}
+
+export function subscribeCampaignTracking(campaignId: number) {
+  if (!socket) {
+    return;
+  }
+
+  const room = `campaign:${campaignId}:volunteers:tracking`;
+  socket.emit('system.join_room', { room });
+  logTrackingDebug('join campaign tracking', { campaignId, room });
+}
+
+export function unsubscribeCampaignTracking(campaignId: number) {
+  if (!socket) {
+    return;
+  }
+
+  const room = `campaign:${campaignId}:volunteers:tracking`;
+  socket.emit('system.leave_room', { room });
+  logTrackingDebug('leave campaign tracking', { campaignId, room });
 }
 
 export function sendShipmentLocationUpdate(payload: TrackingLocationUpdatePayload) {

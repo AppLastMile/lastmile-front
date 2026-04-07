@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import { ActivityIndicator, Platform, SafeAreaView, Text, View } from 'react-native';
-import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
+import { CircleMarker, MapContainer, Popup, TileLayer, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
 import {
   findColombianCityByName,
@@ -11,6 +13,13 @@ import {
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import { getCampaigns, type Campaign } from '@/services/api/campaignsService';
+import {
+  connectTrackingSocket,
+  setTrackingSocketHandlers,
+  subscribeCampaignTracking,
+  unsubscribeCampaignTracking,
+} from '@/services/realtime/trackingSocket';
 
 type EventWithCity = {
   event: EventSummary;
@@ -31,6 +40,12 @@ export function MapScreen() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  const [volunteerPoints, setVolunteerPoints] = useState<Record<number, { lat: number; lng: number; shipmentId?: number; recordedAt?: string }>>({});
+  const [mapInstance, setMapInstance] = useState<any>(null);
+  const mapRef = useRef<any>(null);
+  const myCircleRef = useRef<any>(null);
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -77,6 +92,16 @@ export function MapScreen() {
     }
   }, []);
 
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const resp = await getCampaigns(1, 100);
+      setCampaigns(resp.data);
+      setSelectedCampaignId((current) => current ?? resp.data[0]?.id ?? null);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const refreshEventsSilently = useCallback(async () => {
     try {
       const response = await getEvents({ page: 1, limit: 100 });
@@ -88,6 +113,7 @@ export function MapScreen() {
 
   useEffect(() => {
     loadEvents();
+    void loadCampaigns();
   }, [loadEvents]);
 
   useEffect(() => {
@@ -140,11 +166,112 @@ export function MapScreen() {
     };
   }, []);
 
+  // Campaign tracking (organizer)
+  useEffect(() => {
+    if (!selectedCampaignId) return;
+
+    const auth = { token: (currentUser as any)?.accessToken, userId: (currentUser as any)?.id, role: (currentUser as any)?.role };
+    const socket = connectTrackingSocket(auth);
+
+    setTrackingSocketHandlers({
+      onVolunteerSnapshot: (points) => {
+        const next: Record<number, { lat: number; lng: number; shipmentId?: number; recordedAt?: string }> = {};
+
+        for (const p of points) {
+          if ((p as any).volunteerId) {
+            next[(p as any).volunteerId] = { lat: p.lat, lng: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt };
+          }
+        }
+
+        setVolunteerPoints(next);
+      },
+      onVolunteerLocation: (p) => {
+        if (!(p as any).volunteerId) return;
+        setVolunteerPoints((prev) => ({ ...prev, [(p as any).volunteerId]: { lat: p.lat, lng: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt } }));
+      },
+    });
+
+    subscribeCampaignTracking(selectedCampaignId);
+
+    return () => {
+      try {
+        unsubscribeCampaignTracking(selectedCampaignId);
+      } catch {
+        // noop
+      }
+    };
+  }, [selectedCampaignId]);
+
+  const centerOnMyLocation = () => {
+    if (!myLocation || !mapInstance) return;
+    try {
+      mapInstance.setView(myLocation, 14, { animate: true });
+      // Ensure marker and ring render on top after pan
+      setTimeout(() => {
+        try {
+          try {
+            L.popup({ offset: [0, -10], autoPan: false }).setLatLng(myLocation as any).setContent('Tu ubicación exacta').openOn(mapInstance);
+          } catch (e) {}
+          myCircleRef.current?.bringToFront?.();
+        } catch {}
+      }, 300);
+    } catch {
+      // noop
+    }
+  };
+
+  const myLocationIcon = useMemo(() => {
+    try {
+      return L.divIcon({
+        className: '',
+        html: `
+          <div style="position:relative;width:34px;height:34px;transform:translate(-50%,-50%);">
+            <div style="width:34px;height:34px;border-radius:50%;background:rgba(31,95,224,0.12);border:2px solid rgba(31,95,224,0.18);"></div>
+            <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;background:#1f5fe0;border-radius:50%;box-shadow:0 0 8px rgba(31,95,224,0.8);"></div>
+          </div>
+        `,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
+      });
+    } catch {
+      return undefined as any;
+    }
+  }, []);
+
+  // Helper component to expose the Leaflet map instance via react-leaflet's `useMap`
+  const MapSetter = ({ onMapReady }: { onMapReady: (m: any) => void }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (map) {
+        try {
+          if (!map.getPane('my-location-pane')) {
+            map.createPane('my-location-pane');
+            const p = map.getPane('my-location-pane');
+            if (p && p.style) {
+              p.style.zIndex = '700';
+              p.style.pointerEvents = 'auto';
+            }
+          }
+        } catch (e) {
+          // ignore pane errors
+        }
+
+        onMapReady(map);
+      }
+    }, [map, onMapReady]);
+    return null;
+  };
+
+  const donorWelcomeTop = 12;
+  const floatingControlsTop = 24;
+  const controlsTop = hasWelcomeBanner && showDonorWelcome ? floatingControlsTop + 62 : floatingControlsTop;
+
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       <View className='flex-1' style={{ paddingLeft: webPanelInset }}>
       <View className='flex-1 overflow-hidden rounded-t-3xl border border-[#d3e2ff]'>
         <MapContainer center={mapCenter} style={{ height: '100%', width: '100%' }} zoom={6}>
+          <MapSetter onMapReady={setMapInstance} />
           <TileLayer
             attribution='&copy; OpenStreetMap contributors'
             url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -169,15 +296,51 @@ export function MapScreen() {
 
           {myLocation ? (
             <CircleMarker
+              ref={myCircleRef}
+              pane='my-location-pane'
               center={myLocation}
               key='my-location'
-              pathOptions={{ color: '#1f5fe0', fillColor: '#2a7fff', fillOpacity: 0.95 }}
-              radius={8}
+              pathOptions={{ color: '#1f5fe0', fillColor: '#1f5fe0', fillOpacity: 1 }}
+              radius={6}
             >
-              <Popup>Tu ubicacion actual</Popup>
+              <Popup>Tu ubicación exacta</Popup>
             </CircleMarker>
           ) : null}
+
+          {/* Volunteer markers */}
+          {Object.entries(volunteerPoints).map(([vid, p]) => (
+            <CircleMarker key={`vol-${vid}`} center={[p.lat, p.lng]} pathOptions={{ color: '#16a34a', fillColor: '#16a34a' }} radius={7}>
+              <Popup>Voluntario {vid}{p.shipmentId ? ` — Envío #${p.shipmentId}` : ''}</Popup>
+            </CircleMarker>
+          ))}
         </MapContainer>
+
+        {/* Controles flotantes removidos por diseño: selector de campañas y botón 'Mi ubicación' */}
+        {/* Botón 'Mi ubicación' web: estilo y ubicación similar al mapa native */}
+        <div style={{ position: 'absolute', right: 16, top: controlsTop, zIndex: 900 }}>
+          <button
+            onClick={centerOnMyLocation}
+            disabled={!myLocation || !mapInstance}
+            aria-label='Mi ubicación'
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              background: '#1f5fe0',
+              color: '#fff',
+              padding: '8px 12px',
+              borderRadius: 20,
+              border: 'none',
+              boxShadow: '0 6px 18px rgba(15,38,88,0.24)',
+              cursor: myLocation && mapInstance ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <span style={{ display: 'inline-flex', width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderRadius: 12, background: '#e7efff' }}>
+              <FontAwesome5 name='crosshairs' size={12} color='#1f5fe0' />
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Mi ubicación</span>
+          </button>
+        </div>
 
         {hasWelcomeBanner && showDonorWelcome ? (
           <View className='absolute left-3 right-3 top-3 rounded-2xl border border-[#d0def8] bg-white px-4 py-3'>

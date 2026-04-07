@@ -4,6 +4,7 @@ import * as Location from 'expo-location';
 export type TrackingDevicePoint = {
   lat: number;
   lng: number;
+  accuracy?: number;
   speed?: number;
   heading?: number;
   recordedAt: string;
@@ -29,11 +30,22 @@ export async function startTrackingLocationWatch(
       throw new Error('Geolocalizacion no disponible en este navegador.');
     }
 
-    const watchId = navigator.geolocation.watchPosition(
+    const webGeolocationOptions: PositionOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: Math.max(15000, timeIntervalMs * 3),
+    };
+
+    // Take an initial precise reading to avoid stale browser cache positions.
+    navigator.geolocation.getCurrentPosition(
       (position) => {
         onPoint({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
+          accuracy:
+            typeof position.coords.accuracy === 'number' && Number.isFinite(position.coords.accuracy)
+              ? position.coords.accuracy
+              : undefined,
           speed:
             typeof position.coords.speed === 'number' && Number.isFinite(position.coords.speed)
               ? position.coords.speed
@@ -45,14 +57,44 @@ export async function startTrackingLocationWatch(
           recordedAt: new Date(position.timestamp).toISOString(),
         });
       },
-      () => {
-        // Ignore noisy browser geolocation errors and keep the watch alive.
+      (error) => {
+        // eslint-disable-next-line no-console
+        console.warn('[tracking][web] initial getCurrentPosition failed', {
+          code: error?.code,
+          message: error?.message,
+        });
       },
-      {
-        enableHighAccuracy: false,
-        maximumAge: timeIntervalMs,
-        timeout: timeIntervalMs * 2,
-      }
+      webGeolocationOptions
+    );
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        onPoint({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy:
+            typeof position.coords.accuracy === 'number' && Number.isFinite(position.coords.accuracy)
+              ? position.coords.accuracy
+              : undefined,
+          speed:
+            typeof position.coords.speed === 'number' && Number.isFinite(position.coords.speed)
+              ? position.coords.speed
+              : undefined,
+          heading:
+            typeof position.coords.heading === 'number' && Number.isFinite(position.coords.heading)
+              ? position.coords.heading
+              : undefined,
+          recordedAt: new Date(position.timestamp).toISOString(),
+        });
+      },
+      (error) => {
+        // eslint-disable-next-line no-console
+        console.warn('[tracking][web] watchPosition error', {
+          code: error?.code,
+          message: error?.message,
+        });
+      },
+      webGeolocationOptions
     );
 
     return {
@@ -76,6 +118,10 @@ export async function startTrackingLocationWatch(
       onPoint({
         lat: location.coords.latitude,
         lng: location.coords.longitude,
+        accuracy:
+          typeof location.coords.accuracy === 'number' && Number.isFinite(location.coords.accuracy)
+            ? location.coords.accuracy
+            : undefined,
         speed:
           typeof location.coords.speed === 'number' && Number.isFinite(location.coords.speed)
             ? location.coords.speed

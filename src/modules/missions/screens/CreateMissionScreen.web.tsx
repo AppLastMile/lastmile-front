@@ -1,6 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useRouter } from 'expo-router';
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import {
@@ -24,6 +24,111 @@ import {
 import { createEvent, type EventSummary, getEvents } from '@/services/api/eventsService';
 import { getPickupPoints, type PickupPoint } from '@/services/api/logisticsService';
 import { getRememberedPickupPoints, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
+import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import {
+  connectRealtime,
+  emitRealtime,
+  joinRealtimeRoom,
+  leaveRealtimeRoom,
+  onRealtime,
+} from '@/services/realtime/realtimeService';
+
+type VolunteerMarker = {
+  userId: number;
+  name: string;
+  lat: number;
+  lng: number;
+};
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function normalizeVolunteerMarker(payload: unknown): VolunteerMarker | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const root = payload as Record<string, unknown>;
+  const value =
+    (root.data && typeof root.data === 'object' ? (root.data as Record<string, unknown>) : null) ??
+    (root.location && typeof root.location === 'object' ? { ...root, ...(root.location as Record<string, unknown>) } : null) ??
+    root;
+
+  const coordinates = Array.isArray(value.coordinates) ? value.coordinates : null;
+  const latFromArray = coordinates ? toFiniteNumber(coordinates[1]) : null;
+  const lngFromArray = coordinates ? toFiniteNumber(coordinates[0]) : null;
+
+  const lat = toFiniteNumber(value.lat ?? value.latitude) ?? latFromArray;
+  const lng = toFiniteNumber(value.lng ?? value.longitude) ?? lngFromArray;
+  const rawId = toFiniteNumber(
+    value.userId ?? value.volunteerId ?? value.id ?? value.updatedBy ?? value.updated_by
+  );
+
+  if (lat === null || lng === null || rawId === null) {
+    return null;
+  }
+
+  const fallbackName = `Voluntario ${rawId}`;
+  const name =
+    typeof value.name === 'string'
+      ? value.name
+      : typeof value.fullName === 'string'
+        ? value.fullName
+        : typeof value.userName === 'string'
+          ? value.userName
+          : typeof value.volunteerName === 'string'
+            ? value.volunteerName
+            : fallbackName;
+
+  return {
+    userId: rawId,
+    name,
+    lat,
+    lng,
+  };
+}
+
+function normalizeVolunteerSnapshot(payload: unknown): VolunteerMarker[] {
+  let collection: unknown[] = [];
+
+  if (Array.isArray(payload)) {
+    collection = payload;
+  } else if (payload && typeof payload === 'object') {
+    const value = payload as Record<string, unknown>;
+
+    if (Array.isArray(value.volunteers)) {
+      collection = value.volunteers;
+    } else if (Array.isArray(value.data)) {
+      collection = value.data;
+    } else if (Array.isArray(value.items)) {
+      collection = value.items;
+    } else if (Array.isArray(value.points)) {
+      collection = value.points;
+    }
+  }
+
+  const byId = new Map<number, VolunteerMarker>();
+
+  collection.forEach((item) => {
+    const normalized = normalizeVolunteerMarker(item);
+
+    if (normalized) {
+      byId.set(normalized.userId, normalized);
+    }
+  });
+
+  return Array.from(byId.values());
+}
 
 const DEFAULT_CREATED_BY = 1;
 const DEFAULT_DISASTER_TYPE = 'desastre_natural';
@@ -134,11 +239,40 @@ function RecenterMap({
   return null;
 }
 
+// Helper component to create a dedicated pane for the user's location so it renders above other layers
+const MapSetter = ({ onMapReady }: { onMapReady?: (m: any) => void }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (map) {
+      try {
+        if (!map.getPane('my-location-pane')) {
+          map.createPane('my-location-pane');
+          const p = map.getPane('my-location-pane');
+          if (p && p.style) {
+            p.style.zIndex = '700';
+            p.style.pointerEvents = 'auto';
+          }
+        }
+      } catch (e) {
+        // ignore pane errors
+      }
+
+      onMapReady?.(map);
+    }
+  }, [map, onMapReady]);
+
+  return null;
+};
+
 // eslint-disable-next-line sonarjs/cognitive-complexity
 export function CreateMissionScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1200;
+  const { currentUser } = useAuthSession();
+  const [volunteerMarkers, setVolunteerMarkers] = useState<Record<number, VolunteerMarker>>({});
+  const volunteerMarkersRef = useRef<Record<number, VolunteerMarker>>({});
+
   const [isMissionMenuOpen, setIsMissionMenuOpen] = useState(false);
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isCitySelectorOpen, setIsCitySelectorOpen] = useState(false);
@@ -304,6 +438,97 @@ export function CreateMissionScreen() {
   }, [loadData]);
 
   useEffect(() => {
+    if (!currentUser?.accessToken) return;
+
+    connectRealtime({ token: currentUser.accessToken, userId: currentUser.id, role: currentUser.role });
+    joinRealtimeRoom('volunteers:locations');
+    joinRealtimeRoom('volunteers:tracking');
+
+    // Request an initial snapshot using common event names. Servers may ignore unknown events.
+    emitRealtime('volunteers.locations.snapshot.request', {});
+    emitRealtime('volunteer.location.snapshot.request', {});
+    emitRealtime('campaign.volunteers.snapshot.request', {});
+
+    const applySnapshot = (payload: unknown) => {
+      const normalized = normalizeVolunteerSnapshot(payload);
+
+      if (normalized.length === 0) {
+        return;
+      }
+
+      const next: Record<number, VolunteerMarker> = {};
+      normalized.forEach((item) => {
+        next[item.userId] = item;
+      });
+
+      volunteerMarkersRef.current = next;
+      setVolunteerMarkers({ ...next });
+    };
+
+    const applyLocationUpdate = (payload: unknown) => {
+      const normalized = normalizeVolunteerMarker(payload);
+
+      if (!normalized) {
+        return;
+      }
+
+      volunteerMarkersRef.current = {
+        ...volunteerMarkersRef.current,
+        [normalized.userId]: normalized,
+      };
+      setVolunteerMarkers({ ...volunteerMarkersRef.current });
+    };
+
+    const applyDisconnect = (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+
+      const value = payload as Record<string, unknown>;
+      const rawId = toFiniteNumber(value.userId ?? value.volunteerId ?? value.id);
+
+      if (rawId === null) {
+        return;
+      }
+
+      const next = { ...volunteerMarkersRef.current };
+      delete next[rawId];
+      volunteerMarkersRef.current = next;
+      setVolunteerMarkers({ ...next });
+    };
+
+    const offSnapshot = onRealtime('volunteers.locations.snapshot', applySnapshot);
+    const offSnapshotLegacy = onRealtime('volunteer.location.snapshot', applySnapshot);
+    const offCampaignSnapshot = onRealtime('campaign.volunteers.snapshot', applySnapshot);
+
+    const offUpdated = onRealtime('volunteer.location.updated', applyLocationUpdate);
+    const offChanged = onRealtime('volunteer.location.changed', applyLocationUpdate);
+    const offDirectUpdate = onRealtime('volunteer.location.update', applyLocationUpdate);
+
+    const offDisconnected = onRealtime('volunteer.disconnected', applyDisconnect);
+    const offOffline = onRealtime('volunteer.offline', applyDisconnect);
+    const snapshotIntervalId = setInterval(() => {
+      emitRealtime('volunteers.locations.snapshot.request', {});
+      emitRealtime('volunteer.location.snapshot.request', {});
+      emitRealtime('campaign.volunteers.snapshot.request', {});
+    }, 10000);
+
+    return () => {
+      offSnapshot();
+      offSnapshotLegacy();
+      offCampaignSnapshot();
+      offUpdated();
+      offChanged();
+      offDirectUpdate();
+      offDisconnected();
+      offOffline();
+      clearInterval(snapshotIntervalId);
+      leaveRealtimeRoom('volunteers:locations');
+      leaveRealtimeRoom('volunteers:tracking');
+    };
+  }, [currentUser?.accessToken, currentUser?.id, currentUser?.role]);
+
+  useEffect(() => {
     const refreshId = setInterval(() => {
       void refreshEventsSilently();
     }, 3000);
@@ -434,7 +659,7 @@ export function CreateMissionScreen() {
               Lastmile
             </Text>
             <Text className='mt-1 text-sm text-[#5a7190]'>
-              Panel principal del organizador para gestionar eventos, mapa y operaciones.
+              Operador de logística y coordinación de misiones.
             </Text>
 
             <View className='mt-6'>
@@ -472,26 +697,16 @@ export function CreateMissionScreen() {
               </Text>
             </View>
 
-            <View className='mt-5 rounded-2xl border border-[#e2ebf8] bg-[#fbfdff] px-4 py-4'>
-              <Text className='text-xs font-semibold uppercase tracking-[0.22em] text-[#6f7f9b]'>
-                Estado
-              </Text>
-              <Text className='mt-1 text-sm font-semibold text-[#17325b]'>
-                {myLocation ? 'Ubicación conectada' : 'Ubicación pendiente'}
-              </Text>
-              <Text className='mt-1 text-xs text-[#60738f]'>
-                {loadError || `${mappedEvents.length} eventos y ${mappedPickupPoints.length} puntos visibles.`}
-              </Text>
-            </View>
           </View>
 
-          <View className={`${isDesktop ? 'flex-1' : 'w-full'} min-h-[760px] relative overflow-hidden rounded-[34px] border border-[#d2e1f8] bg-[#f6faff] shadow-[0_18px_42px_rgba(19,39,78,0.12)]`}>
+            <View className={`${isDesktop ? 'flex-1' : 'w-full'} min-h-[760px] relative overflow-hidden rounded-[34px] border border-[#d2e1f8] bg-[#f6faff] shadow-[0_18px_42px_rgba(19,39,78,0.12)]`}>
             <View className='absolute left-0 right-0 top-0 bottom-0' style={{ zIndex: 0 }}>
               <MapContainer
                 center={mapCenter}
                 style={{ height: '100%', width: '100%' }}
                 zoom={6}
               >
+                <MapSetter />
                 <RecenterMap
                   commandId={centerCommandId}
                   locateCommandId={locateCommandId}
@@ -546,14 +761,26 @@ export function CreateMissionScreen() {
                     </Popup>
                   </CircleMarker>
                 ))}
+
+                {Object.values(volunteerMarkers).map((v) => (
+                  <CircleMarker
+                    center={[v.lat, v.lng]}
+                    key={`volunteer-${v.userId}`}
+                    pathOptions={{ color: '#15803d', fillColor: '#22c55e', fillOpacity: 0.95 }}
+                    radius={10}
+                  >
+                    <Popup>
+                      <strong>Voluntario: {v.name}</strong>
+                    </Popup>
+                  </CircleMarker>
+                ))}
               </MapContainer>
             </View>
 
             <View className='absolute left-4 right-4 top-4 flex-row flex-wrap gap-3' style={{ pointerEvents: 'none', zIndex: 45 }}>
-              <SummaryPill label='GPS' value={myLocation ? 'Conectado' : 'Sin señal'} accent='#49c9ad' />
               <SummaryPill label='Operaciones' value={`${mappedEvents.length} activas`} accent='#0a63ff' />
+              <SummaryPill label='Voluntarios' value={`${Object.keys(volunteerMarkers).length} en línea`} accent='#22c55e' />
               <SummaryPill label='Recogidas' value={`${mappedPickupPoints.length} puntos`} accent='#7a95c9' />
-              <SummaryPill label='Cobertura' value='Colombia' accent='#f5bb4c' />
             </View>
 
             <View
@@ -573,40 +800,6 @@ export function CreateMissionScreen() {
                   </Text>
                 </View>
               </View>
-            </View>
-
-            <View className='absolute right-4 bottom-4' style={{ zIndex: 50 }}>
-              <Pressable
-                className={`rounded-2xl px-4 py-3 shadow-[0_10px_24px_rgba(10,99,255,0.28)] ${isLocatingUser ? 'bg-[#93aed8]' : 'bg-[#0a63ff]'}`}
-                disabled={isLocatingUser}
-                onPress={() => {
-                  if (isLocatingUser) {
-                    return;
-                  }
-
-                  if (myLocation) {
-                    centerMapOnLocation(myLocation);
-                    return;
-                  }
-
-                  requestUserLocation();
-                }}
-              >
-                <View className='flex-row items-center gap-2'>
-                  <View className='h-7 w-7 items-center justify-center rounded-full bg-white/20'>
-                    <MaterialIcons color='#ffffff' name='my-location' size={16} />
-                  </View>
-                  <Text className='text-sm font-semibold text-white'>
-                    {isLocatingUser ? 'Buscando...' : 'Mi ubicación'}
-                  </Text>
-                </View>
-              </Pressable>
-
-              {locationActionError ? (
-                <View className='mt-2 max-w-[280px] rounded-xl bg-[#fff4e6] px-3 py-2'>
-                  <Text className='text-xs text-[#9a6400]'>{locationActionError}</Text>
-                </View>
-              ) : null}
             </View>
 
           </View>

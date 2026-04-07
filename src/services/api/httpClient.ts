@@ -58,9 +58,9 @@ function getBrowserHost() {
 }
 
 function resolveApiBaseUrl() {
-  // En web: siempre usar localhost, ignorar variables de entorno (que pueden ser ngrok)
+  // En web: usar la URL configurada para producción cuando exista.
   if (Platform.OS === 'web') {
-    return DEFAULT_API_BASE_URL;
+    return EXPO_PUBLIC_API_URL ?? DEFAULT_API_BASE_URL;
   }
 
   // En nativo: usar la variable de entorno (ngrok) o el default

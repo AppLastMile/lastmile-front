@@ -4,7 +4,7 @@ import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 import { ActivityIndicator, Platform, Pressable, SafeAreaView, Text, View } from 'react-native';
-import MapView, { Marker, type Region } from 'react-native-maps';
+import MapView, { Marker, Circle, type Region } from 'react-native-maps';
 
 import {
   findColombianCityByName,
@@ -13,6 +13,14 @@ import {
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import { getCampaigns, type Campaign } from '@/services/api/campaignsService';
+import {
+  connectTrackingSocket,
+  setTrackingSocketHandlers,
+  subscribeCampaignTracking,
+  unsubscribeCampaignTracking,
+  disconnectTrackingSocket,
+} from '@/services/realtime/trackingSocket';
 
 const COLOMBIA_REGION: Region = {
   latitude: 4.5709,
@@ -44,6 +52,9 @@ export function MapScreen() {
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  const [volunteerPoints, setVolunteerPoints] = useState<Record<number, { latitude: number; longitude: number; shipmentId?: number; recordedAt?: string }>>({});
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -75,6 +86,16 @@ export function MapScreen() {
     }
   }, []);
 
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const resp = await getCampaigns(1, 100);
+      setCampaigns(resp.data);
+      setSelectedCampaignId((current) => current ?? resp.data[0]?.id ?? null);
+    } catch {
+      // ignore failures; campaigns are optional for map
+    }
+  }, []);
+
   const refreshEventsSilently = useCallback(async () => {
     try {
       const response = await getEvents({ page: 1, limit: 100 });
@@ -86,6 +107,7 @@ export function MapScreen() {
 
   useEffect(() => {
     loadEvents();
+    void loadCampaigns();
   }, [loadEvents]);
 
   useEffect(() => {
@@ -137,7 +159,8 @@ export function MapScreen() {
         }
 
         const current = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+          accuracy: Location.Accuracy.Highest,
+          maximumAge: 0,
         });
 
         if (isMounted) {
@@ -147,7 +170,7 @@ export function MapScreen() {
 
         watch = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.Balanced,
+            accuracy: Location.Accuracy.Highest,
             timeInterval: 3000,
             distanceInterval: 8,
           },
@@ -175,20 +198,74 @@ export function MapScreen() {
     };
   }, []);
 
+  // Tracking: subscribe to campaign volunteer feed when organizer selects a campaign
+  useEffect(() => {
+    if (currentUser?.role !== 'organizer' || !selectedCampaignId) {
+      return;
+    }
+
+    const auth = { token: currentUser?.accessToken, userId: currentUser?.id, role: currentUser?.role };
+    const socket = connectTrackingSocket(auth, {});
+
+    setTrackingSocketHandlers({
+      onVolunteerSnapshot: (points) => {
+        const next: Record<number, { latitude: number; longitude: number; shipmentId?: number; recordedAt?: string }> = {};
+
+        for (const p of points) {
+          if (p.volunteerId) {
+            next[p.volunteerId] = { latitude: p.lat, longitude: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt };
+          }
+        }
+
+        setVolunteerPoints(next);
+      },
+      onVolunteerLocation: (p) => {
+        if (!p.volunteerId) return;
+
+        setVolunteerPoints((prev) => ({ ...prev, [p.volunteerId as number]: { latitude: p.lat, longitude: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt } }));
+      },
+      onError: (msg) => {
+        // no-op for now
+      },
+    });
+
+    subscribeCampaignTracking(selectedCampaignId);
+
+    return () => {
+      try {
+        unsubscribeCampaignTracking(selectedCampaignId);
+      } catch {
+        /**/ }
+      // keep socket alive for other modules; optionally disconnect if needed
+    };
+  }, [currentUser, selectedCampaignId]);
+
   const centerOnMyLocation = () => {
     if (!myLocation || !mapRef) {
       return;
     }
 
-    mapRef.animateToRegion(
-      {
-        latitude: myLocation.latitude,
-        longitude: myLocation.longitude,
-        latitudeDelta: 0.04,
-        longitudeDelta: 0.04,
-      },
-      700
-    );
+    try {
+      if (typeof (mapRef as any).animateToRegion === 'function') {
+        (mapRef as any).animateToRegion(
+          {
+            latitude: myLocation.latitude,
+            longitude: myLocation.longitude,
+            latitudeDelta: 0.04,
+            longitudeDelta: 0.04,
+          },
+          700
+        );
+        return;
+      }
+
+      if (typeof (mapRef as any).animateCamera === 'function') {
+        (mapRef as any).animateCamera({ center: { latitude: myLocation.latitude, longitude: myLocation.longitude }, pitch: 0, heading: 0, altitude: 1000 }, { duration: 700 });
+        return;
+      }
+    } catch (err) {
+      // fallback noop
+    }
   };
 
   if (isDonor && isWeb) {
@@ -232,14 +309,41 @@ export function MapScreen() {
           ))}
 
           {myLocation ? (
-            <Marker
-              coordinate={myLocation}
-              description='Ubicacion actual del dispositivo'
-              key='my-location'
-              pinColor='#2563eb'
-              title='Tu ubicacion'
-            />
+            <>
+              <Circle
+                center={myLocation}
+                radius={20}
+                strokeColor='#1f5fe0'
+                fillColor='rgba(31,95,224,0.12)'
+                strokeWidth={2}
+                zIndex={1}
+              />
+
+              {/* Small filled dot to mark exact location (shows above the circle) */}
+              <Marker
+                coordinate={myLocation}
+                key='my-location-dot'
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+              >
+                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#1f5fe0', borderWidth: 2, borderColor: 'rgba(31,95,224,0.18)' }} />
+              </Marker>
+            </>
           ) : null}
+
+          {/* Volunteer markers (organizer view) */}
+          {Object.entries(volunteerPoints).map(([vid, point]) => {
+            const id = Number(vid);
+            return (
+              <Marker
+                key={`vol-${id}`}
+                coordinate={{ latitude: point.latitude, longitude: point.longitude }}
+                title={`Voluntario ${id}`}
+                description={point.shipmentId ? `Envio #${point.shipmentId}` : 'Ubicacion reciente'}
+                pinColor='#16a34a'
+              />
+            );
+          })}
         </MapView>
 
         {hasWelcomeBanner && showDonorWelcome ? (
@@ -285,26 +389,28 @@ export function MapScreen() {
           </View>
         ) : null}
 
-        <View className='absolute right-4' style={{ top: controlsTop }}>
-          <Pressable
-            className='flex-row items-center gap-2 rounded-2xl bg-[#1f5fe0] px-4 py-2.5'
-            disabled={!myLocation}
-            onPress={centerOnMyLocation}
-            style={{
-              opacity: myLocation ? 1 : 0.65,
-              shadowColor: '#0b327f',
-              shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.24,
-              shadowRadius: 10,
-              elevation: 8,
-            }}
-          >
-            <View className='h-6 w-6 items-center justify-center rounded-full bg-[#e7efff]'>
-              <FontAwesome5 color='#1f5fe0' name='crosshairs' size={11} />
-            </View>
-            <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicación</Text>
-          </Pressable>
-        </View>
+        {!isWeb ? (
+          <View className='absolute right-4' style={{ top: controlsTop }}>
+            <Pressable
+              className='flex-row items-center gap-2 rounded-2xl bg-[#1f5fe0] px-4 py-2.5'
+              disabled={!myLocation}
+              onPress={centerOnMyLocation}
+              style={{
+                opacity: myLocation ? 1 : 0.65,
+                shadowColor: '#0b327f',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.24,
+                shadowRadius: 10,
+                elevation: 8,
+              }}
+            >
+              <View className='h-6 w-6 items-center justify-center rounded-full bg-[#e7efff]'>
+                <FontAwesome5 color='#1f5fe0' name='crosshairs' size={11} />
+              </View>
+              <Text className='text-xs font-bold tracking-wide text-white'>Mi ubicación</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {isLocating ? (
           <View className='absolute right-4 rounded-xl bg-white px-3 py-2' style={{ top: controlsTop + 44 }}>

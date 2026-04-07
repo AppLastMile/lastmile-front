@@ -478,7 +478,13 @@ export function OrganizerLogisticsScreen() {
       setPickupPoints(pickupPointsResponse.data);
       rememberPickupPoints(pickupPointsResponse.data);
       setShipments(shipmentsResponse.data);
-      setVolunteers(usersResponse.data.filter((user) => user.role === 'volunteer'));
+      const volunteersById = new Map<number, UserSummary>();
+      for (const u of usersResponse.data) {
+        if (u?.role === 'volunteer' && u?.id != null && !volunteersById.has(u.id)) {
+          volunteersById.set(u.id, u);
+        }
+      }
+      setVolunteers(Array.from(volunteersById.values()));
       setSelectedEventId((current) => current ?? eventsResponse.data[0]?.id ?? null);
       setSelectedCampaignIdForShipment((current) => current ?? campaignsResponse.data[0]?.id ?? null);
       setSelectedPickupPointIdForShipment((current) => current ?? pickupPointsResponse.data[0]?.id ?? null);
