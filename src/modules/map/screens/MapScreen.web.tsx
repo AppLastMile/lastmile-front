@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ActivityIndicator, Platform, SafeAreaView, Text, View } from 'react-native';
-import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet';
+import { CircleMarker, MapContainer, Popup, TileLayer, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
 import {
   findColombianCityByName,
@@ -208,6 +209,24 @@ export function MapScreen() {
     }
   };
 
+  const myLocationIcon = useMemo(() => {
+    try {
+      return L.divIcon({
+        className: '',
+        html: `
+          <div style="position:relative;width:34px;height:34px;transform:translate(-50%,-50%);">
+            <div style="width:34px;height:34px;border-radius:50%;background:rgba(31,95,224,0.12);border:2px solid rgba(31,95,224,0.18);"></div>
+            <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;background:#1f5fe0;border-radius:50%;box-shadow:0 0 8px rgba(31,95,224,0.8);"></div>
+          </div>
+        `,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
+      });
+    } catch {
+      return undefined as any;
+    }
+  }, []);
+
   return (
     <SafeAreaView className='flex-1 bg-[#eaf2ff]'>
       <View className='flex-1' style={{ paddingLeft: webPanelInset }}>
@@ -236,14 +255,9 @@ export function MapScreen() {
           ))}
 
           {myLocation ? (
-            <CircleMarker
-              center={myLocation}
-              key='my-location'
-              pathOptions={{ color: '#1f5fe0', fillColor: '#2a7fff', fillOpacity: 0.95 }}
-              radius={8}
-            >
-              <Popup>Tu ubicacion actual</Popup>
-            </CircleMarker>
+            <Marker position={myLocation} key='my-location' icon={myLocationIcon}>
+              <Popup>Tu ubicación exacta</Popup>
+            </Marker>
           ) : null}
 
           {/* Volunteer markers */}
