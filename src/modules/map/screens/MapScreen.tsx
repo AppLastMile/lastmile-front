@@ -13,6 +13,14 @@ import {
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 import { DonorBottomTabs, VOLUNTEER_WEB_PANEL_OFFSET } from '@/modules/donor/components/DonorBottomTabs';
 import { type EventSummary, getEvents } from '@/services/api/eventsService';
+import { getCampaigns, type Campaign } from '@/services/api/campaignsService';
+import {
+  connectTrackingSocket,
+  setTrackingSocketHandlers,
+  subscribeCampaignTracking,
+  unsubscribeCampaignTracking,
+  disconnectTrackingSocket,
+} from '@/services/realtime/trackingSocket';
 
 const COLOMBIA_REGION: Region = {
   latitude: 4.5709,
@@ -44,6 +52,9 @@ export function MapScreen() {
   const [isLocating, setIsLocating] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  const [volunteerPoints, setVolunteerPoints] = useState<Record<number, { latitude: number; longitude: number; shipmentId?: number; recordedAt?: string }>>({});
 
   const mappedEvents = useMemo<EventWithCity[]>(
     () =>
@@ -75,6 +86,16 @@ export function MapScreen() {
     }
   }, []);
 
+  const loadCampaigns = useCallback(async () => {
+    try {
+      const resp = await getCampaigns(1, 100);
+      setCampaigns(resp.data);
+      setSelectedCampaignId((current) => current ?? resp.data[0]?.id ?? null);
+    } catch {
+      // ignore failures; campaigns are optional for map
+    }
+  }, []);
+
   const refreshEventsSilently = useCallback(async () => {
     try {
       const response = await getEvents({ page: 1, limit: 100 });
@@ -86,6 +107,7 @@ export function MapScreen() {
 
   useEffect(() => {
     loadEvents();
+    void loadCampaigns();
   }, [loadEvents]);
 
   useEffect(() => {
@@ -175,20 +197,74 @@ export function MapScreen() {
     };
   }, []);
 
+  // Tracking: subscribe to campaign volunteer feed when organizer selects a campaign
+  useEffect(() => {
+    if (currentUser?.role !== 'organizer' || !selectedCampaignId) {
+      return;
+    }
+
+    const auth = { token: currentUser?.accessToken, userId: currentUser?.id, role: currentUser?.role };
+    const socket = connectTrackingSocket(auth, {});
+
+    setTrackingSocketHandlers({
+      onVolunteerSnapshot: (points) => {
+        const next: Record<number, { latitude: number; longitude: number; shipmentId?: number; recordedAt?: string }> = {};
+
+        for (const p of points) {
+          if (p.volunteerId) {
+            next[p.volunteerId] = { latitude: p.lat, longitude: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt };
+          }
+        }
+
+        setVolunteerPoints(next);
+      },
+      onVolunteerLocation: (p) => {
+        if (!p.volunteerId) return;
+
+        setVolunteerPoints((prev) => ({ ...prev, [p.volunteerId as number]: { latitude: p.lat, longitude: p.lng, shipmentId: p.shipmentId, recordedAt: p.recordedAt } }));
+      },
+      onError: (msg) => {
+        // no-op for now
+      },
+    });
+
+    subscribeCampaignTracking(selectedCampaignId);
+
+    return () => {
+      try {
+        unsubscribeCampaignTracking(selectedCampaignId);
+      } catch {
+        /**/ }
+      // keep socket alive for other modules; optionally disconnect if needed
+    };
+  }, [currentUser, selectedCampaignId]);
+
   const centerOnMyLocation = () => {
     if (!myLocation || !mapRef) {
       return;
     }
 
-    mapRef.animateToRegion(
-      {
-        latitude: myLocation.latitude,
-        longitude: myLocation.longitude,
-        latitudeDelta: 0.04,
-        longitudeDelta: 0.04,
-      },
-      700
-    );
+    try {
+      if (typeof (mapRef as any).animateToRegion === 'function') {
+        (mapRef as any).animateToRegion(
+          {
+            latitude: myLocation.latitude,
+            longitude: myLocation.longitude,
+            latitudeDelta: 0.04,
+            longitudeDelta: 0.04,
+          },
+          700
+        );
+        return;
+      }
+
+      if (typeof (mapRef as any).animateCamera === 'function') {
+        (mapRef as any).animateCamera({ center: { latitude: myLocation.latitude, longitude: myLocation.longitude }, pitch: 0, heading: 0, altitude: 1000 }, { duration: 700 });
+        return;
+      }
+    } catch (err) {
+      // fallback noop
+    }
   };
 
   if (isDonor && isWeb) {
@@ -240,6 +316,20 @@ export function MapScreen() {
               title='Tu ubicacion'
             />
           ) : null}
+
+          {/* Volunteer markers (organizer view) */}
+          {Object.entries(volunteerPoints).map(([vid, point]) => {
+            const id = Number(vid);
+            return (
+              <Marker
+                key={`vol-${id}`}
+                coordinate={{ latitude: point.latitude, longitude: point.longitude }}
+                title={`Voluntario ${id}`}
+                description={point.shipmentId ? `Envio #${point.shipmentId}` : 'Ubicacion reciente'}
+                pinColor='#16a34a'
+              />
+            );
+          })}
         </MapView>
 
         {hasWelcomeBanner && showDonorWelcome ? (
