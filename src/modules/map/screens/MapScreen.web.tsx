@@ -265,9 +265,20 @@ export function MapScreen() {
           ))}
 
           {myLocation ? (
-            <Marker position={myLocation} key='my-location' icon={myLocationIcon}>
-              <Popup>Tu ubicación exacta</Popup>
-            </Marker>
+            <>
+              {/* Ring to highlight area around user's exact point */}
+              <CircleMarker
+                center={myLocation}
+                key='my-location-ring'
+                pathOptions={{ color: '#1f5fe0', fillColor: 'rgba(31,95,224,0.12)', fillOpacity: 0.35, weight: 2 }}
+                radius={18}
+              />
+
+              {/* Exact location marker on top */}
+              <Marker position={myLocation} key='my-location' icon={myLocationIcon} zIndexOffset={1000}>
+                <Popup>Tu ubicación exacta</Popup>
+              </Marker>
+            </>
           ) : null}
 
           {/* Volunteer markers */}
