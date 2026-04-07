@@ -439,13 +439,25 @@ export function CreateMissionScreen() {
         ) : null}
 
         {myLocation ? (
-          <Marker
-            coordinate={myLocation}
-            description='Ubicacion actual del dispositivo'
-            key='my-location'
-            pinColor='#2563eb'
-            title='Tu ubicacion'
-          />
+          <>
+            <Circle
+              center={myLocation}
+              radius={20}
+              strokeColor='#1f5fe0'
+              fillColor='rgba(31,95,224,0.12)'
+              strokeWidth={2}
+              zIndex={1}
+            />
+
+            <Marker
+              coordinate={myLocation}
+              key='my-location-dot'
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#1f5fe0', borderWidth: 2, borderColor: 'rgba(31,95,224,0.18)' }} />
+            </Marker>
+          </>
         ) : null}
       </MapView>
 

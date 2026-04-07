@@ -547,7 +547,16 @@ export function CreateMissionScreen() {
 
           <View className={`${isDesktop ? 'flex-1' : 'w-full'} min-h-[760px] relative overflow-hidden rounded-[34px] border border-[#d2e1f8] bg-[#f6faff] shadow-[0_18px_42px_rgba(19,39,78,0.12)]`}>
             <View className='absolute left-0 right-0 top-0 bottom-0' style={{ zIndex: 0 }}>
-              <MapContainer
+                      {myLocation ? (
+                        <CircleMarker
+                          center={myLocation}
+                          key='my-location'
+                          pathOptions={{ color: '#1f5fe0', fillColor: '#1f5fe0', fillOpacity: 1 }}
+                          radius={6}
+                        >
+                          <Popup>Tu ubicación exacta</Popup>
+                        </CircleMarker>
+                      ) : null}
                 center={mapCenter}
                 style={{ height: '100%', width: '100%' }}
                 zoom={6}
