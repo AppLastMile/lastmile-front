@@ -40,6 +40,11 @@ type VolunteerMarker = {
   lng: number;
 };
 
+type PickupPointCoordinates = {
+  latitude: number;
+  longitude: number;
+};
+
 function toFiniteNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -284,6 +289,9 @@ export function CreateMissionScreen() {
 
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
+  const [pickupPointCoordinatesById, setPickupPointCoordinatesById] = useState<
+    Record<number, PickupPointCoordinates>
+  >({});
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -294,6 +302,7 @@ export function CreateMissionScreen() {
   const [centerCommandId, setCenterCommandId] = useState(0);
   const [locateCommandId, setLocateCommandId] = useState(0);
   const [locationActionError, setLocationActionError] = useState<string | null>(null);
+  const geocodingInFlightRef = useRef<Set<number>>(new Set());
 
   const canCreateEvent = useMemo(
     () =>
@@ -329,6 +338,16 @@ export function CreateMissionScreen() {
             };
           }
 
+          const resolvedCoordinates = pickupPointCoordinatesById[pickupPoint.id];
+
+          if (resolvedCoordinates) {
+            return {
+              pickupPoint,
+              latitude: resolvedCoordinates.latitude,
+              longitude: resolvedCoordinates.longitude,
+            };
+          }
+
           const city = findColombianCityByName(pickupPoint.city);
 
           if (!city) {
@@ -350,8 +369,83 @@ export function CreateMissionScreen() {
             longitude: number;
           } => Boolean(item)
         ),
-    [pickupPoints]
+    [pickupPointCoordinatesById, pickupPoints]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const unresolvedPickupPoints = pickupPoints.filter((pickupPoint) => {
+      const hasCoordinates =
+        typeof pickupPoint.latitude === 'number' && typeof pickupPoint.longitude === 'number';
+
+      return !hasCoordinates && !pickupPointCoordinatesById[pickupPoint.id];
+    });
+
+    if (unresolvedPickupPoints.length === 0) {
+      return;
+    }
+
+    const geocodePickupPoints = async () => {
+      for (const pickupPoint of unresolvedPickupPoints) {
+        if (geocodingInFlightRef.current.has(pickupPoint.id)) {
+          continue;
+        }
+
+        geocodingInFlightRef.current.add(pickupPoint.id);
+
+        try {
+          const query = `${pickupPoint.address}, ${pickupPoint.city}, Colombia`;
+          const params = new URLSearchParams({
+            q: query,
+            format: 'jsonv2',
+            limit: '1',
+            countrycodes: 'co',
+            addressdetails: '0',
+          });
+
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+            headers: {
+              Accept: 'application/json',
+            },
+          });
+
+          if (!response.ok) {
+            continue;
+          }
+
+          const payload = (await response.json()) as Array<{ lat?: string; lon?: string }>;
+          const first = payload[0];
+
+          const latitude = first?.lat ? Number.parseFloat(first.lat) : Number.NaN;
+          const longitude = first?.lon ? Number.parseFloat(first.lon) : Number.NaN;
+
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            continue;
+          }
+
+          if (cancelled) {
+            return;
+          }
+
+          setPickupPointCoordinatesById((current) => ({
+            ...current,
+            [pickupPoint.id]: { latitude, longitude },
+          }));
+        } catch {
+          // Keep city-level fallback when geocoding fails.
+        } finally {
+          geocodingInFlightRef.current.delete(pickupPoint.id);
+        }
+      }
+    };
+
+    void geocodePickupPoints();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pickupPointCoordinatesById, pickupPoints]);
 
   const navItems: OrganizerNavItem[] = [
     { id: 'mapa', label: 'Mapa', icon: 'map', route: '/organizer/create-mission', isActive: true },
