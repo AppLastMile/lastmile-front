@@ -390,15 +390,24 @@ export function emitRealtime<T>(event: string, payload: T) {
 }
 
 export function onRealtime<T = unknown>(event: string, handler: RealtimeHandler<T>) {
+  // Capture the current socket instance so that cleanup always targets the
+  // exact socket the listener was registered on, even if the module-level
+  // variable is replaced later (e.g. token change → new connection).
+  const registeredSocket = socket;
+
+  if (!registeredSocket) {
+    return () => {};
+  }
+
   const wrapped = (payload: T) => {
     logRealtimeDebug(`on ${event}`, payload);
     handler(payload);
   };
 
-  socket?.on(event, wrapped as (...args: unknown[]) => void);
+  registeredSocket.on(event, wrapped as (...args: unknown[]) => void);
 
   return () => {
-    socket?.off(event, wrapped as (...args: unknown[]) => void);
+    registeredSocket.off(event, wrapped as (...args: unknown[]) => void);
   };
 }
 
