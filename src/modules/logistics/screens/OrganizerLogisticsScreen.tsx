@@ -35,6 +35,13 @@ import {
 import { rememberPickupPoint, rememberPickupPoints } from '@/services/state/pickupPointsMemory';
 import { getUsers, type UserSummary } from '@/services/api/usersService';
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
+import {
+  connectRealtime,
+  emitRealtime,
+  joinRealtimeRoom,
+  leaveRealtimeRoom,
+  onRealtime,
+} from '@/services/realtime/realtimeService';
 
 function getErrorMessage(error: unknown) {
   if (!(error instanceof Error)) {
@@ -109,6 +116,50 @@ function getSector(id: number) {
 function toNumberId(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractVolunteerId(payload: unknown) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const value = payload as Record<string, unknown>;
+
+  return toNumberId(
+    value.userId ?? value.volunteerId ?? value.id ?? value.updatedBy ?? value.updated_by
+  );
+}
+
+function extractVolunteerIdsFromSnapshot(payload: unknown) {
+  let collection: unknown[] = [];
+
+  if (Array.isArray(payload)) {
+    collection = payload;
+  } else if (payload && typeof payload === 'object') {
+    const value = payload as Record<string, unknown>;
+
+    if (Array.isArray(value.volunteers)) {
+      collection = value.volunteers;
+    } else if (Array.isArray(value.data)) {
+      collection = value.data;
+    } else if (Array.isArray(value.items)) {
+      collection = value.items;
+    } else if (Array.isArray(value.points)) {
+      collection = value.points;
+    }
+  }
+
+  const ids = new Set<number>();
+
+  collection.forEach((item) => {
+    const volunteerId = extractVolunteerId(item);
+
+    if (volunteerId !== null) {
+      ids.add(volunteerId);
+    }
+  });
+
+  return Array.from(ids);
 }
 
 function getShipmentCampaignId(shipment: Shipment) {
@@ -303,6 +354,7 @@ export function OrganizerLogisticsScreen() {
   const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [volunteers, setVolunteers] = useState<UserSummary[]>([]);
+  const [connectedVolunteerIds, setConnectedVolunteerIds] = useState<number[]>([]);
   const [selectedVolunteerForAssignment, setSelectedVolunteerForAssignment] = useState<UserSummary | null>(null);
   const [selectedCampaignForAssignment, setSelectedCampaignForAssignment] = useState<number | null>(null);
   const [isAssigningVolunteer, setIsAssigningVolunteer] = useState(false);
@@ -442,6 +494,11 @@ export function OrganizerLogisticsScreen() {
     [events]
   );
 
+  const availableVolunteers = useMemo(
+    () => volunteers.filter((volunteer) => connectedVolunteerIds.includes(volunteer.id)),
+    [connectedVolunteerIds, volunteers]
+  );
+
   const canCreatePickup =
     pickupName.trim().length >= 3 &&
     pickupAddress.trim().length >= 5 &&
@@ -501,6 +558,98 @@ export function OrganizerLogisticsScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (!isWeb || !currentUser?.accessToken || currentUser.role !== 'organizer') {
+      return;
+    }
+
+    connectRealtime({
+      token: currentUser.accessToken,
+      userId: currentUser.id,
+      role: currentUser.role,
+    });
+
+    joinRealtimeRoom('volunteers:locations');
+    joinRealtimeRoom('volunteers:tracking');
+
+    const applySnapshot = (payload: unknown) => {
+      const ids = extractVolunteerIdsFromSnapshot(payload);
+      setConnectedVolunteerIds(ids);
+    };
+
+    const markConnected = (payload: unknown) => {
+      const volunteerId = extractVolunteerId(payload);
+
+      if (volunteerId === null) {
+        return;
+      }
+
+      setConnectedVolunteerIds((current) =>
+        current.includes(volunteerId) ? current : [...current, volunteerId]
+      );
+    };
+
+    const markDisconnected = (payload: unknown) => {
+      const volunteerId = extractVolunteerId(payload);
+
+      if (volunteerId === null) {
+        return;
+      }
+
+      setConnectedVolunteerIds((current) => current.filter((id) => id !== volunteerId));
+    };
+
+    emitRealtime('volunteers.locations.snapshot.request', {});
+    emitRealtime('volunteer.location.snapshot.request', {});
+    emitRealtime('campaign.volunteers.snapshot.request', {});
+
+    const offLocationsSnapshot = onRealtime('volunteers.locations.snapshot', applySnapshot);
+    const offSnapshotLegacy = onRealtime('volunteer.location.snapshot', applySnapshot);
+    const offCampaignSnapshot = onRealtime('campaign.volunteers.snapshot', applySnapshot);
+
+    const offLocationUpdated = onRealtime('volunteer.location.updated', markConnected);
+    const offLocationChanged = onRealtime('volunteer.location.changed', markConnected);
+    const offLocationUpdate = onRealtime('volunteer.location.update', markConnected);
+    const offConnected = onRealtime('volunteer.connected', markConnected);
+
+    const offDisconnected = onRealtime('volunteer.disconnected', markDisconnected);
+    const offOffline = onRealtime('volunteer.offline', markDisconnected);
+
+    const snapshotIntervalId = setInterval(() => {
+      emitRealtime('volunteers.locations.snapshot.request', {});
+      emitRealtime('volunteer.location.snapshot.request', {});
+      emitRealtime('campaign.volunteers.snapshot.request', {});
+    }, 10000);
+
+    return () => {
+      offLocationsSnapshot();
+      offSnapshotLegacy();
+      offCampaignSnapshot();
+      offLocationUpdated();
+      offLocationChanged();
+      offLocationUpdate();
+      offConnected();
+      offDisconnected();
+      offOffline();
+      clearInterval(snapshotIntervalId);
+      leaveRealtimeRoom('volunteers:locations');
+      leaveRealtimeRoom('volunteers:tracking');
+    };
+  }, [currentUser?.accessToken, currentUser?.id, currentUser?.role, isWeb]);
+
+  useEffect(() => {
+    if (!selectedVolunteerForAssignment) {
+      return;
+    }
+
+    const isStillConnected = connectedVolunteerIds.includes(selectedVolunteerForAssignment.id);
+
+    if (!isStillConnected) {
+      setSelectedVolunteerForAssignment(null);
+      setSelectedCampaignForAssignment(null);
+    }
+  }, [connectedVolunteerIds, selectedVolunteerForAssignment]);
 
   const handleSelectCity = (city: ColombianCity) => {
     setSelectedCity(city);
@@ -741,7 +890,7 @@ export function OrganizerLogisticsScreen() {
             >
               <Text style={{ fontSize: 11, color: '#7c8ba3', fontWeight: '700' }}>VOLUNTARIOS DISPONIBLES</Text>
               <Text style={{ marginTop: 2, fontSize: 23, fontWeight: '900', color: '#11284d' }}>
-                {volunteers.length}
+                {availableVolunteers.length}
               </Text>
             </View>
           </View>
@@ -1035,15 +1184,16 @@ export function OrganizerLogisticsScreen() {
         </View>
 
         {/* ── Voluntarios disponibles ── */}
+        {availableVolunteers.length > 0 ? (
         <View style={{ paddingHorizontal: isWeb ? 12 : 20, marginBottom: 24 }}>
           <View style={{ backgroundColor: isWeb ? '#fff' : 'transparent', borderRadius: isWeb ? 22 : 0, borderWidth: isWeb ? 1 : 0, borderColor: '#e7eef9', paddingHorizontal: isWeb ? 14 : 0, paddingVertical: isWeb ? 16 : 0 }}>
           <Text style={{ fontSize: 20, fontWeight: '900', color: '#111f3c', marginBottom: 14 }}>Voluntarios disponibles</Text>
 
-          {volunteers.length === 0 ? (
+          {availableVolunteers.length === 0 ? (
             <Text style={{ fontSize: 14, color: '#9ca3af' }}>No hay voluntarios disponibles.</Text>
           ) : (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-              {volunteers.map((volunteer) => (
+              {availableVolunteers.map((volunteer) => (
                 <VolunteerCard
                   key={volunteer.id}
                   volunteer={volunteer}
@@ -1136,6 +1286,7 @@ export function OrganizerLogisticsScreen() {
           ) : null}
           </View>
         </View>
+        ) : null}
 
       </View>
       </ScrollView>
