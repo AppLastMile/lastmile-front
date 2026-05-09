@@ -21,4 +21,11 @@ export const authService = {
       body: payload,
     });
   },
+
+  loginWithGoogle(accessToken: string) {
+    return httpClient<AuthSession>('/auth/google', {
+      method: 'POST',
+      body: { accessToken },
+    });
+  },
 };

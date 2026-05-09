@@ -1,5 +1,8 @@
-import { FontAwesome5 } from '@expo/vector-icons';
+import { AntDesign, FontAwesome5 } from '@expo/vector-icons';
+import * as AuthSession from 'expo-auth-session';
+import * as Google from 'expo-auth-session/providers/google';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -22,11 +25,16 @@ import Animated, {
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 
+WebBrowser.maybeCompleteAuthSession();
+
 const HERO_IMAGES = [
   require('../../../../assets/auth/login-hero.jpg'),
   require('../../../../assets/auth/login-hero-2.jpg'),
   require('../../../../assets/auth/login-hero-4.jpg'),
 ];
+
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+const redirectUri = AuthSession.makeRedirectUri({ scheme: 'lastmile-front' });
 
 function getLoginErrorMessage(error: unknown) {
   if (!(error instanceof Error) || !error.message) {
@@ -58,7 +66,7 @@ function getLoginErrorMessage(error: unknown) {
 
 export function LoginScreen() {
   const router = useRouter();
-  const { currentUser, login } = useAuthSession();
+  const { currentUser, login, loginWithGoogle } = useAuthSession();
   const { width } = useWindowDimensions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -73,6 +81,16 @@ export function LoginScreen() {
     'sebastian.duque-c@mail.escuelaing.edu.co',
     'samuel.albarracin-v@mail.escuelaing.edu.co',
   ];
+
+  const [googleRequest, googleResponse, googlePromptAsync] =
+    Google.useAuthRequest({
+      clientId: GOOGLE_CLIENT_ID,
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri,
+    });
+
+  // Log para ver exactamente qué redirect URI se está usando
+  console.log('[Google OAuth] redirectUri:', redirectUri);
 
   const isDisabled = useMemo(
     () => isSubmitting || !email.trim() || !password.trim(),
@@ -92,6 +110,38 @@ export function LoginScreen() {
       setIsSubmitting(false);
     }
   };
+
+  const handleGoogleLogin = async (idToken: string) => {
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const matched = await loginWithGoogle(idToken);
+      router.replace(matched.redirectTo as never);
+    } catch (loginError) {
+      setError(getLoginErrorMessage(loginError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!googleResponse) return;
+
+    if (googleResponse.type === 'success') {
+      const accessToken = googleResponse.authentication?.accessToken;
+      if (accessToken) {
+        void handleGoogleLogin(accessToken);
+      } else {
+        setError('No se pudo obtener el token de Google. Intenta nuevamente.');
+      }
+    } else if (googleResponse.type === 'error') {
+      console.log('[Google OAuth] error:', JSON.stringify(googleResponse.error));
+      setError('Error al autenticar con Google. Intenta nuevamente.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleResponse]);
+
 
   useEffect(() => {
     if (currentUser) {
@@ -169,6 +219,25 @@ export function LoginScreen() {
       >
         <Text className='text-center text-base font-bold text-white'>
           {isSubmitting ? 'Ingresando...' : 'Iniciar Sesión'}
+        </Text>
+      </Pressable>
+
+      <View className='my-4 flex-row items-center'>
+        <View className='h-px flex-1 bg-[#dfe8ff]' />
+        <Text className='mx-3 text-xs text-[#88a0c6]'>o continúa con</Text>
+        <View className='h-px flex-1 bg-[#dfe8ff]' />
+      </View>
+
+      <Pressable
+        className={`flex-row items-center justify-center rounded-xl border border-[#dfe8ff] bg-white px-4 py-4 ${
+          !googleRequest || isSubmitting ? 'opacity-50' : ''
+        }`}
+        disabled={!googleRequest || isSubmitting}
+        onPress={() => void googlePromptAsync()}
+      >
+        <AntDesign color='#EA4335' name='google' size={18} />
+        <Text className='ml-2 text-base font-bold text-[#2d4468]'>
+          Continuar con Google
         </Text>
       </Pressable>
     </Animated.View>
