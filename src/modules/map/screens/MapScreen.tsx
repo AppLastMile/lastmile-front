@@ -158,22 +158,21 @@ export function MapScreen() {
           return;
         }
 
-        const current = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Highest,
-          maximumAge: 0,
-        });
+        const currentOptions: any = { accuracy: Location.Accuracy.Balanced };
+        const current = await Location.getCurrentPositionAsync(currentOptions);
 
         if (isMounted) {
           setMyLocation({ latitude: current.coords.latitude, longitude: current.coords.longitude });
           setIsLocating(false);
         }
 
-        watch = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Highest,
-            timeInterval: 3000,
-            distanceInterval: 8,
-          },
+        const watchOptions: any = {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 3000,
+          distanceInterval: 8,
+        };
+
+        watch = await Location.watchPositionAsync(watchOptions,
           (position) => {
             if (!isMounted) {
               return;

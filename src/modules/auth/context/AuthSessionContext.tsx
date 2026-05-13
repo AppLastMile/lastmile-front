@@ -27,6 +27,7 @@ function getRedirectByRole(role: UserRole) {
 type AuthSessionContextValue = {
   currentUser: AuthSessionUser | null;
   login: (email: string, password: string) => Promise<AuthSessionUser>;
+  loginWithGoogle: (idToken: string) => Promise<AuthSessionUser>;
   logout: () => void;
 };
 
@@ -43,6 +44,21 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
           email: email.trim().toLowerCase(),
           password,
         });
+
+        const authenticatedUser: AuthSessionUser = {
+          id: session.user.id,
+          email: session.user.email,
+          role: session.user.role,
+          accessToken: session.accessToken,
+          redirectTo: getRedirectByRole(session.user.role),
+        };
+
+        setCurrentUser(authenticatedUser);
+
+        return authenticatedUser;
+      },
+      async loginWithGoogle(idToken: string) {
+        const session = await authService.loginWithGoogle(idToken);
 
         const authenticatedUser: AuthSessionUser = {
           id: session.user.id,

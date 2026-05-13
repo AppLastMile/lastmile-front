@@ -1,5 +1,8 @@
-import { FontAwesome5 } from '@expo/vector-icons';
+import { AntDesign, FontAwesome5 } from '@expo/vector-icons';
+import * as AuthSession from 'expo-auth-session';
+import * as Google from 'expo-auth-session/providers/google';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -22,11 +25,18 @@ import Animated, {
 
 import { useAuthSession } from '@/modules/auth/context/AuthSessionContext';
 
+WebBrowser.maybeCompleteAuthSession();
+
 const HERO_IMAGES = [
   require('../../../../assets/auth/login-hero.jpg'),
   require('../../../../assets/auth/login-hero-2.jpg'),
   require('../../../../assets/auth/login-hero-4.jpg'),
 ];
+
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+
+const redirectUri = AuthSession.makeRedirectUri({ scheme: 'lastmile-front' });
 
 function getLoginErrorMessage(error: unknown) {
   if (!(error instanceof Error) || !error.message) {
@@ -58,7 +68,7 @@ function getLoginErrorMessage(error: unknown) {
 
 export function LoginScreen() {
   const router = useRouter();
-  const { currentUser, login } = useAuthSession();
+  const { currentUser, login, loginWithGoogle } = useAuthSession();
   const { width } = useWindowDimensions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -73,6 +83,51 @@ export function LoginScreen() {
     'sebastian.duque-c@mail.escuelaing.edu.co',
     'samuel.albarracin-v@mail.escuelaing.edu.co',
   ];
+
+  // Log para ver exactamente qué redirect URI se está usando
+  console.log('[Google OAuth] redirectUri:', redirectUri);
+
+  // Child component will handle Google auth hook to avoid calling hooks conditionally here
+  function GoogleAuthButton({ onToken }: { onToken: (token: string) => void }) {
+    // choose platform-appropriate client ids
+    const clientIdForPlatform = Platform.OS === 'web' ? GOOGLE_WEB_CLIENT_ID : GOOGLE_CLIENT_ID;
+
+    const [request, response, promptAsync] = Google.useAuthRequest({
+      clientId: clientIdForPlatform,
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri,
+      responseType: 'id_token',
+      extraParams: { prompt: 'select_account' },
+    } as any);
+
+    useEffect(() => {
+      if (!response) return;
+      if (response.type === 'success') {
+        const idToken = response.authentication?.idToken ?? (response as any).params?.id_token;
+        const accessToken = response.authentication?.accessToken;
+        const tokenToSend = idToken ?? accessToken;
+        if (tokenToSend) {
+          onToken(tokenToSend as string);
+        }
+      } else if (response.type === 'error') {
+        console.log('[Google OAuth] error:', JSON.stringify(response.error));
+      }
+    }, [response, onToken]);
+
+    const disabled = !request;
+
+    return (
+      <Pressable
+        className={`flex-row items-center justify-center rounded-xl border border-[#dfe8ff] bg-white px-4 py-4 ${disabled ? 'opacity-50' : ''}`}
+        disabled={disabled || isSubmitting}
+        onPress={() => void promptAsync()}
+      >
+        <AntDesign color='#EA4335' name='google' size={18} />
+        <Text className='ml-2 text-base font-bold text-[#2d4468]'>Continuar con Google</Text>
+      </Pressable>
+    );
+  }
 
   const isDisabled = useMemo(
     () => isSubmitting || !email.trim() || !password.trim(),
@@ -92,6 +147,21 @@ export function LoginScreen() {
       setIsSubmitting(false);
     }
   };
+
+  const handleGoogleLogin = async (idToken: string) => {
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const matched = await loginWithGoogle(idToken);
+      router.replace(matched.redirectTo as never);
+    } catch (loginError) {
+      setError(getLoginErrorMessage(loginError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
 
   useEffect(() => {
     if (currentUser) {
@@ -171,6 +241,25 @@ export function LoginScreen() {
           {isSubmitting ? 'Ingresando...' : 'Iniciar Sesión'}
         </Text>
       </Pressable>
+
+      <View className='my-4 flex-row items-center'>
+        <View className='h-px flex-1 bg-[#dfe8ff]' />
+        <Text className='mx-3 text-xs text-[#88a0c6]'>o continúa con</Text>
+        <View className='h-px flex-1 bg-[#dfe8ff]' />
+      </View>
+
+      {/* Render Google auth button only when properly configured for the current platform */}
+      {Platform.OS === 'web' ? (
+        GOOGLE_WEB_CLIENT_ID ? (
+          <GoogleAuthButton onToken={(t) => void handleGoogleLogin(t)} />
+        ) : (
+          <View className='text-xs text-[#9aa8c6]'>
+            <Text style={{ color: '#9aa8c6' }}>Google login no configurado para web.</Text>
+          </View>
+        )
+      ) : (
+        <GoogleAuthButton onToken={(t) => void handleGoogleLogin(t)} />
+      )}
     </Animated.View>
   );
 
