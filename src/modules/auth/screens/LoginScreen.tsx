@@ -34,6 +34,8 @@ const HERO_IMAGES = [
 ];
 
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+
 const redirectUri = AuthSession.makeRedirectUri({ scheme: 'lastmile-front' });
 
 function getLoginErrorMessage(error: unknown) {
@@ -82,15 +84,50 @@ export function LoginScreen() {
     'samuel.albarracin-v@mail.escuelaing.edu.co',
   ];
 
-  const [googleRequest, googleResponse, googlePromptAsync] =
-    Google.useAuthRequest({
-      clientId: GOOGLE_CLIENT_ID,
-      scopes: ['openid', 'profile', 'email'],
-      redirectUri,
-    });
-
   // Log para ver exactamente qué redirect URI se está usando
   console.log('[Google OAuth] redirectUri:', redirectUri);
+
+  // Child component will handle Google auth hook to avoid calling hooks conditionally here
+  function GoogleAuthButton({ onToken }: { onToken: (token: string) => void }) {
+    // choose platform-appropriate client ids
+    const clientIdForPlatform = Platform.OS === 'web' ? GOOGLE_WEB_CLIENT_ID : GOOGLE_CLIENT_ID;
+
+    const [request, response, promptAsync] = Google.useAuthRequest({
+      clientId: clientIdForPlatform,
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri,
+      responseType: 'id_token',
+      extraParams: { prompt: 'select_account' },
+    } as any);
+
+    useEffect(() => {
+      if (!response) return;
+      if (response.type === 'success') {
+        const idToken = response.authentication?.idToken ?? (response as any).params?.id_token;
+        const accessToken = response.authentication?.accessToken;
+        const tokenToSend = idToken ?? accessToken;
+        if (tokenToSend) {
+          onToken(tokenToSend as string);
+        }
+      } else if (response.type === 'error') {
+        console.log('[Google OAuth] error:', JSON.stringify(response.error));
+      }
+    }, [response, onToken]);
+
+    const disabled = !request;
+
+    return (
+      <Pressable
+        className={`flex-row items-center justify-center rounded-xl border border-[#dfe8ff] bg-white px-4 py-4 ${disabled ? 'opacity-50' : ''}`}
+        disabled={disabled || isSubmitting}
+        onPress={() => void promptAsync()}
+      >
+        <AntDesign color='#EA4335' name='google' size={18} />
+        <Text className='ml-2 text-base font-bold text-[#2d4468]'>Continuar con Google</Text>
+      </Pressable>
+    );
+  }
 
   const isDisabled = useMemo(
     () => isSubmitting || !email.trim() || !password.trim(),
@@ -124,23 +161,6 @@ export function LoginScreen() {
       setIsSubmitting(false);
     }
   };
-
-  useEffect(() => {
-    if (!googleResponse) return;
-
-    if (googleResponse.type === 'success') {
-      const accessToken = googleResponse.authentication?.accessToken;
-      if (accessToken) {
-        void handleGoogleLogin(accessToken);
-      } else {
-        setError('No se pudo obtener el token de Google. Intenta nuevamente.');
-      }
-    } else if (googleResponse.type === 'error') {
-      console.log('[Google OAuth] error:', JSON.stringify(googleResponse.error));
-      setError('Error al autenticar con Google. Intenta nuevamente.');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [googleResponse]);
 
 
   useEffect(() => {
@@ -228,18 +248,18 @@ export function LoginScreen() {
         <View className='h-px flex-1 bg-[#dfe8ff]' />
       </View>
 
-      <Pressable
-        className={`flex-row items-center justify-center rounded-xl border border-[#dfe8ff] bg-white px-4 py-4 ${
-          !googleRequest || isSubmitting ? 'opacity-50' : ''
-        }`}
-        disabled={!googleRequest || isSubmitting}
-        onPress={() => void googlePromptAsync()}
-      >
-        <AntDesign color='#EA4335' name='google' size={18} />
-        <Text className='ml-2 text-base font-bold text-[#2d4468]'>
-          Continuar con Google
-        </Text>
-      </Pressable>
+      {/* Render Google auth button only when properly configured for the current platform */}
+      {Platform.OS === 'web' ? (
+        GOOGLE_WEB_CLIENT_ID ? (
+          <GoogleAuthButton onToken={(t) => void handleGoogleLogin(t)} />
+        ) : (
+          <View className='text-xs text-[#9aa8c6]'>
+            <Text style={{ color: '#9aa8c6' }}>Google login no configurado para web.</Text>
+          </View>
+        )
+      ) : (
+        <GoogleAuthButton onToken={(t) => void handleGoogleLogin(t)} />
+      )}
     </Animated.View>
   );
 
