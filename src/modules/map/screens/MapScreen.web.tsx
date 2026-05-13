@@ -147,6 +147,12 @@ export function MapScreen() {
       return;
     }
 
+    const positionOptions: PositionOptions = {
+      enableHighAccuracy: false,
+      timeout: 8000,
+      maximumAge: 5000,
+    };
+
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setMyLocation([position.coords.latitude, position.coords.longitude]);
@@ -154,11 +160,7 @@ export function MapScreen() {
       () => {
         // Keep map usable without location permission.
       },
-      {
-        enableHighAccuracy: false,
-        timeout: 8000,
-        maximumAge: 5000,
-      }
+      positionOptions
     );
 
     return () => {

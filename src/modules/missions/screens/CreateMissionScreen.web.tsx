@@ -568,6 +568,12 @@ export function CreateMissionScreen() {
       return;
     }
 
+    const positionOptions: PositionOptions = {
+      enableHighAccuracy: false,
+      timeout: 8000,
+      maximumAge: 5000,
+    };
+
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
         setMyLocation([position.coords.latitude, position.coords.longitude]);
@@ -575,11 +581,7 @@ export function CreateMissionScreen() {
       () => {
         // Keep the map useful without location permission.
       },
-      {
-        enableHighAccuracy: false,
-        timeout: 8000,
-        maximumAge: 5000,
-      }
+      positionOptions
     );
 
     return () => {
